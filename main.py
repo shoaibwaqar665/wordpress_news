@@ -8,6 +8,8 @@ from difflib import SequenceMatcher
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import json
+import time
 
 # Load environment variables
 load_dotenv()
@@ -17,9 +19,15 @@ username = os.getenv('WORDPRESS_USERNAME')
 password = os.getenv('WORDPRESS_PASSWORD')
 wordpress_url = os.getenv('WORDPRESS_URL')
 
+# Unsplash API credentials
+unsplash_access_key = os.getenv('UNSPLASH_ACCESS_KEY')
+
 # Validate environment variables
 if not all([username, password, wordpress_url]):
     raise ValueError("Missing required environment variables. Please check your .env file.")
+
+if not unsplash_access_key:
+    print("⚠️ Warning: UNSPLASH_ACCESS_KEY not found. Image functionality will be limited.")
 
 credentials = username + ':' + password
 cred_token = base64.b64encode(credentials.encode())
@@ -350,7 +358,7 @@ def send_email_notification(topic, category, post_title, post_link):
         print(f"❌ Error sending email notification: {e}")
         return False
 
-def post_to_wordpress(title, content, category_name="Health"):
+def post_to_wordpress(title, content, category_name="Health", featured_image_id=None):
     """Post content to WordPress using category name"""
     # Get category ID by name
     category_id = get_category_id_by_name(category_name)
@@ -364,12 +372,18 @@ def post_to_wordpress(title, content, category_name="Health"):
         'format': 'standard'
     }
     
+    # Add featured image if provided
+    if featured_image_id:
+        post_data['featured_media'] = featured_image_id
+    
     try:
         response = requests.post(url, headers=header, json=post_data)
         if response.status_code == 201:
             print(f"✅ Blog post '{title}' published successfully!")
             print(f"Post ID: {response.json().get('id')}")
             print(f"Category: {category_name}")
+            if featured_image_id:
+                print(f"Featured Image ID: {featured_image_id}")
             print(f"View at: {response.json().get('link')}")
             return response.json()
         else:
@@ -380,6 +394,119 @@ def post_to_wordpress(title, content, category_name="Health"):
         print(f"❌ Error posting to WordPress: {e}")
         return None
 
+def generate_blog_image(topic, category):
+    """Get a relevant image for the blog post using Unsplash API"""
+    if not unsplash_access_key:
+        print("❌ Unsplash access key not available")
+        return None
+        
+    try:
+        # Create search query based on topic and category
+        search_terms = [topic, category]
+        # Add some generic terms for better results
+        if "technology" in category.lower():
+            search_terms.extend(["technology", "digital", "innovation"])
+        elif "health" in category.lower():
+            search_terms.extend(["healthcare", "medical", "wellness"])
+        elif "business" in category.lower():
+            search_terms.extend(["business", "corporate", "professional"])
+        elif "environment" in category.lower():
+            search_terms.extend(["environment", "sustainability", "green"])
+        
+        # Try different search terms until we find an image
+        for search_term in search_terms[:3]:  # Limit to first 3 terms
+            try:
+                query = search_term.replace(" ", "+")
+                response = requests.get(
+                    f"https://api.unsplash.com/search/photos?query={query}&per_page=1&orientation=landscape",
+                    headers={"Authorization": f"Client-ID {unsplash_access_key}"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data['results']:
+                        img_url = data['results'][0]['urls']['regular']
+                        print(f"✅ Found Unsplash image for: {search_term}")
+                        return img_url
+                        
+            except Exception as e:
+                print(f"❌ Error searching for '{search_term}': {e}")
+                continue
+        
+        print("❌ No suitable images found on Unsplash")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error getting image from Unsplash: {e}")
+        return None
+
+def upload_image_to_wordpress(image_url, filename, title):
+    """Upload image to WordPress media library from URL"""
+    try:
+        # Download image from URL
+        print(f"📥 Downloading image from: {image_url}")
+        image_response = requests.get(image_url)
+        
+        if image_response.status_code != 200:
+            print(f"❌ Failed to download image: {image_response.status_code}")
+            return None
+        
+        image_bytes = image_response.content
+        
+        # Prepare the upload
+        media_url = f'{wordpress_url}/wp-json/wp/v2/media'
+        
+        # Create multipart form data
+        files = {
+            'file': (filename, image_bytes, 'image/jpeg')
+        }
+        
+        data = {
+            'title': title,
+            'caption': title,
+            'alt_text': title
+        }
+        
+        # Upload the image
+        response = requests.post(media_url, headers=header, files=files, data=data)
+        
+        if response.status_code == 201:
+            media_info = response.json()
+            print(f"✅ Image uploaded successfully: {media_info['source_url']}")
+            return media_info['id'], media_info['source_url']
+        else:
+            print(f"❌ Error uploading image: {response.status_code}")
+            print(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error uploading image to WordPress: {e}")
+        return None
+
+def add_images_to_content(content, topic, category):
+    """Finds and uploads a single Unsplash image and returns its ID, without modifying the content."""
+    try:
+        # Get main featured image
+        print("🎨 Getting featured image from Unsplash...")
+        featured_image_url = generate_blog_image(topic, category)
+        
+        if featured_image_url:
+            # Upload featured image
+            featured_filename = f"featured_{topic.lower().replace(' ', '_')}.jpg"
+            upload_result = upload_image_to_wordpress(featured_image_url, featured_filename, f"Featured image for {topic}")
+            
+            if upload_result:
+                featured_image_id, _ = upload_result
+                # Return the original content (unmodified) and the new featured image ID
+                return content, featured_image_id
+        
+        print("⚠️ No image found, proceeding with text-only content")
+        return content, None
+        
+    except Exception as e:
+        print(f"❌ Error adding image to content: {e}")
+        return content, None
+
 def main():
     # List of topics with their categories
     topics_with_categories = [
@@ -387,23 +514,20 @@ def main():
         #     "topic": "Machine Learning Applications in Finance",
         #     "category": "Technology"
         # },
-        {
-            "topic": "The Future of Artificial Intelligence in Healthcare",
-            "category": "Health"
-        },
+        # {
+        #     "topic": "The Future of Artificial Intelligence in Healthcare",
+        #     "category": "Health"
+        # },
         
         # {
         #     "topic": "Sustainable Technology: Green Solutions for Tomorrow",
         #     "category": "Environment"
         # },
-        # {
-        #     "topic": "Cybersecurity Best Practices for Small Businesses",
-        #     "category": "Business"
-        # },
-        # # {
-        # #     "topic": "The Rise of Remote Work: Technology Trends",
-        # #     "category": "Workplace"
-        # # }
+        {
+            "topic": "Cybersecurity Best Practices for Small Businesses",
+            "category": "Business"
+        },
+        
     ]
     
     print("🤖 Starting blog generation and posting process...\n")
@@ -428,8 +552,12 @@ def main():
         content = generate_blog_content(topic)
         
         if content:
+            # Add images to content
+            print("🖼️ Adding images to content...")
+            content_with_images, featured_image_id = add_images_to_content(content, topic, category)
+            
             # Post to WordPress
-            result = post_to_wordpress(topic, content, category)
+            result = post_to_wordpress(topic, content_with_images, category, featured_image_id)
             
             if result:
                 print(f"✅ Successfully posted: {topic}\n")
@@ -441,7 +569,6 @@ def main():
             print(f"❌ Failed to generate content for: {topic}\n")
         
         # Add a small delay between posts to avoid rate limiting
-        import time
         time.sleep(2)
 
 if __name__ == "__main__":
