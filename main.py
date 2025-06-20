@@ -5,6 +5,9 @@ import os
 from dotenv import load_dotenv
 import re
 from difflib import SequenceMatcher
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Load environment variables
 load_dotenv()
@@ -296,6 +299,57 @@ def generate_excerpt(content, max_length=160):
             break
     return excerpt.strip()[:max_length]
 
+def send_email_notification(topic, category, post_title, post_link):
+    """Send email notification when a blog post is published"""
+    # Email configuration
+    sender_email = "blognotifier.alerts@gmail.com"
+    sender_password = os.getenv('GOOGLE_APP_KEY') # App password
+    # receiver_email = "shoaib.waqar665@gmail.com"
+    receiver_email = "linkcrafter@gmail.com"
+    
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = f"New Blog Post Published: {post_title}"
+    
+    # Email body
+    body = f"""
+    🎉 New Blog Post Published!
+    
+    📝 Topic: {topic}
+    📂 Category: {category}
+    📋 Title: {post_title}
+    🔗 View Post: {post_link}
+    
+    Your blog post has been successfully published to WordPress.
+    
+    Best regards,
+    Blog Notifier Bot
+    """
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        # Create SMTP session
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        
+        # Login to the server
+        server.login(sender_email, sender_password)
+        
+        # Send email
+        text = msg.as_string()
+        server.sendmail(sender_email, receiver_email, text)
+        server.quit()
+        
+        print(f"✅ Email notification sent to {receiver_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error sending email notification: {e}")
+        return False
+
 def post_to_wordpress(title, content, category_name="Health"):
     """Post content to WordPress using category name"""
     # Get category ID by name
@@ -387,6 +441,8 @@ def main():
             
             if result:
                 print(f"✅ Successfully posted: {topic}\n")
+                # Send email notification
+                send_email_notification(topic, category, topic, result['link'])
             else:
                 print(f"❌ Failed to post: {topic}\n")
         else:
