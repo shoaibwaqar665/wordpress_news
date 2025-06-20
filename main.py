@@ -20,6 +20,7 @@ if not all([username, password, wordpress_url]):
 
 credentials = username + ':' + password
 cred_token = base64.b64encode(credentials.encode())
+
 url = f'{wordpress_url}/wp-json/wp/v2/posts'
 header = {'Authorization': 'Basic ' + cred_token.decode('utf-8')}
 
@@ -30,20 +31,29 @@ if not gemini_api_key:
 
 genai.configure(api_key=gemini_api_key)
 model = genai.GenerativeModel("gemini-2.0-flash")
-
 def get_categories():
-    """Fetch all categories from WordPress"""
-    categories_url = f'{wordpress_url}/wp-json/wp/v2/categories'
-    try:
-        response = requests.get(categories_url, headers=header)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"❌ Error fetching categories: {response.status_code}")
-            return []
-    except Exception as e:
-        print(f"❌ Error fetching categories: {e}")
-        return []
+    """Fetch all categories from WordPress, handling pagination."""
+    categories = []
+    page = 1
+    while True:
+        categories_url = f'{wordpress_url}/wp-json/wp/v2/categories?per_page=100&page={page}'
+        try:
+            response = requests.get(categories_url, headers=header)
+            if response.status_code == 200:
+                page_data = response.json()
+                if not page_data:
+                    break
+                categories.extend(page_data)
+                page += 1
+            else:
+                print(f"❌ Error fetching categories: {response.status_code}")
+                break
+        except Exception as e:
+            print(f"❌ Exception while fetching categories: {e}")
+            break
+
+    return categories
+
 
 def get_category_id_by_name(category_name):
     """Get category ID by name"""
@@ -271,24 +281,40 @@ def generate_keywords(topic):
         fallback_keywords = topic_words + ['technology', 'innovation', 'digital', 'transformation', 'future', 'trends', 'industry', 'development']
         return ', '.join(fallback_keywords[:10])
 
-def post_to_wordpress(title, content, category_name="Technology"):
+def generate_excerpt(content, max_length=160):
+    """Generate an excerpt from the content"""
+    # Remove HTML tags for excerpt
+    import re
+    clean_content = re.sub(r'<[^>]+>', '', content)
+    # Take first few sentences
+    sentences = clean_content.split('.')
+    excerpt = ''
+    for sentence in sentences:
+        if len(excerpt + sentence) < max_length:
+            excerpt += sentence + '. '
+        else:
+            break
+    return excerpt.strip()[:max_length]
+
+def post_to_wordpress(title, content, category_name="Health"):
     """Post content to WordPress using category name"""
     # Get category ID by name
     category_id = get_category_id_by_name(category_name)
     
     # If category doesn't exist, create it
-    if category_id is None:
-        print(f"📝 Category '{category_name}' not found. Creating new category...")
-        category_id = create_category_if_not_exists(category_name)
-        if category_id is None:
-            print(f"❌ Failed to create category '{category_name}'. Using default category.")
-            category_id = 1  # Default category
-    
+    # if category_id is None:
+    #     print(f"📝 Category '{category_name}' not found. Creating new category...")
+    #     category_id = create_category_if_not_exists(category_name)
+    #     if category_id is None:
+    #         print(f"❌ Failed to create category '{category_name}'. Using default category.")
+    #         category_id = 1  # Default category
+    print('content ', content[0:5000])
     post_data = {
         'title': title,
         'content': content,
         'status': 'draft',
         'categories': [category_id],
+        'excerpt': '\u200e',
         'format': 'standard'
     }
     
@@ -356,6 +382,14 @@ def main():
         content = generate_blog_content(topic)
         
         if content:
+            # write content to the txt file
+            with open('content.txt', 'a') as f:
+                f.write(f"Topic: {topic}\n")
+                f.write(f"Category: {category}\n")
+                f.write('--------------------------------\n')
+                f.write(content)
+                f.write('\n')
+                f.write('\n')
             # Post to WordPress
             result = post_to_wordpress(topic, content, category)
             
