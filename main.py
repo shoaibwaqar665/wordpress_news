@@ -428,14 +428,6 @@ def main():
         content = generate_blog_content(topic)
         
         if content:
-            # write content to the txt file
-            with open('content.txt', 'a') as f:
-                f.write(f"Topic: {topic}\n")
-                f.write(f"Category: {category}\n")
-                f.write('--------------------------------\n')
-                f.write(content)
-                f.write('\n')
-                f.write('\n')
             # Post to WordPress
             result = post_to_wordpress(topic, content, category)
             
