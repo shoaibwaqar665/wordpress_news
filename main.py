@@ -301,14 +301,6 @@ def post_to_wordpress(title, content, category_name="Health"):
     # Get category ID by name
     category_id = get_category_id_by_name(category_name)
     
-    # If category doesn't exist, create it
-    # if category_id is None:
-    #     print(f"📝 Category '{category_name}' not found. Creating new category...")
-    #     category_id = create_category_if_not_exists(category_name)
-    #     if category_id is None:
-    #         print(f"❌ Failed to create category '{category_name}'. Using default category.")
-    #         category_id = 1  # Default category
-    print('content ', content[0:5000])
     post_data = {
         'title': title,
         'content': content,
