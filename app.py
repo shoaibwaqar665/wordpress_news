@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from scraper import scraper_main
 import threading
 import time
@@ -6,6 +7,7 @@ import uuid
 from datetime import datetime
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Global dictionary to store scraping tasks and their status
 scraping_tasks = {}
