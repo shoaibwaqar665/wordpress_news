@@ -239,25 +239,6 @@ def convert_to_html(content):
     
     return '\n'.join(html_lines)
 
-def remove_heading_paragraph_repeat(content):
-    import re
-    lines = [line for line in content.split('\n') if line.strip()]
-    # Find first heading
-    heading = None
-    heading_idx = None
-    for i, line in enumerate(lines):
-        if line.startswith('<h2>') and line.endswith('</h2>'):
-            heading = re.sub(r'<.*?>', '', line).strip().lower()
-            heading_idx = i
-            break
-    # Find first paragraph after heading
-    if heading is not None and heading_idx is not None and heading_idx + 1 < len(lines):
-        first_para = re.sub(r'<.*?>', '', lines[heading_idx + 1]).strip().lower()
-        # If very similar, remove the paragraph
-        if SequenceMatcher(None, heading, first_para).ratio() > 0.7:
-            del lines[heading_idx + 1]
-    return '\n'.join(lines)
-
 def generate_keywords(topic):
     """Generate relevant keywords for the topic"""
     keyword_prompt = f"""
@@ -507,32 +488,88 @@ def add_images_to_content(content, topic, category):
         print(f"❌ Error adding image to content: {e}")
         return content, None
 
-def main():
-    # List of topics with their categories
-    topics_with_categories = [
-        # {
-        #     "topic": "Machine Learning Applications in Finance",
-        #     "category": "Technology"
-        # },
-        # {
-        #     "topic": "The Future of Artificial Intelligence in Healthcare",
-        #     "category": "Health"
-        # },
-        
-        # {
-        #     "topic": "Sustainable Technology: Green Solutions for Tomorrow",
-        #     "category": "Environment"
-        # },
-        {
-            "topic": "Cybersecurity Best Practices for Small Businesses",
-            "category": "Business"
-        },
-        
-    ]
+def rewrite_scraped_content(original_content, topic):
+    """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
-    print("🤖 Starting blog generation and posting process...\n")
-    print(f"📝 Using WordPress site: {wordpress_url}")
-    print(f"👤 Username: {username}\n")
+    rewrite_prompt = f"""
+    Rewrite the following content about '{topic}' to make it unique, SEO-optimized, and engaging.
+
+    ORIGINAL CONTENT:
+    {original_content[:2000]}  # Limit to first 2000 characters to avoid token limits
+
+    REQUIREMENTS:
+    - Rewrite the content completely in your own words
+    - Keep the same main topic and key information
+    - Make it SEO-optimized with relevant keywords
+    - Write 800-1000 words
+    - Use clear, professional language
+    - Include specific examples and data where relevant
+    - Structure with proper headings (use ## for section headings)
+    - Do NOT copy any sentences from the original
+    - Make it completely unique while maintaining accuracy
+    - Focus on African tech/startup context when relevant
+    - Use only complete, original content
+    - NO markdown formatting or HTML tags in the output (plain text only)
+
+    STRUCTURE:
+    1. Main Heading (use ## or <h2>)
+    2. Introduction section (2 paragraphs)
+    3. Main Content (3-4 sections with clear headings)
+    4. Conclusion (1-2 paragraphs)
+
+    FORMATTING:
+    - Use ## for section headings
+    - Write in plain text only
+    - Do not repeat the title
+    - Do not use any special characters or formatting
+    """
+    
+    try:
+        # Generate rewritten content
+        response = model.generate_content(rewrite_prompt)
+        content = response.text.strip()
+        
+        # Clean the content thoroughly
+        content = clean_content(content, topic)
+        
+        # Convert to proper HTML format for WordPress
+        content = convert_to_html(content)
+        
+        # Generate keywords separately
+        keywords = generate_keywords(topic)
+        
+        # Add keywords section with proper formatting
+        keywords_section = f"""
+<h3>Keywords</h3>
+<p><strong>Related Keywords:</strong> {keywords}</p>
+"""
+        
+        # Combine content with keywords
+        final_content = f"{content}\n{keywords_section}"
+        
+        return final_content
+        
+    except Exception as e:
+        print(f"Error rewriting content: {e}")
+        return None
+
+def process_scraped_articles():
+    """Process scraped articles from scraper.py and post to WordPress"""
+    
+    # Check if scraped data exists
+    if not os.path.exists('scraped_data.json'):
+        print("❌ No scraped data found. Please run scraper.py first.")
+        return
+    
+    # Load scraped data
+    try:
+        with open('scraped_data.json', 'r', encoding='utf-8') as f:
+            scraped_articles = json.load(f)
+    except Exception as e:
+        print(f"❌ Error loading scraped data: {e}")
+        return
+    
+    print(f"📄 Found {len(scraped_articles)} scraped articles to process")
     
     # Show available categories first
     print("📋 Available categories:")
@@ -541,20 +578,27 @@ def main():
         print(f"  - {category['name']} (ID: {category['id']})")
     print()
     
-    for i, item in enumerate(topics_with_categories, 1):
-        topic = item["topic"]
-        category = item["category"]
+    # Process each scraped article
+    for i, article in enumerate(scraped_articles, 1):
+        topic = article['topic']
+        original_content = article['content']
+        url = article['url']
         
-        print(f"📝 Generating blog {i}/{len(topics_with_categories)}: {topic}")
+        print(f"📝 Processing article {i}/{len(scraped_articles)}: {topic}")
+        print(f"🔗 Source: {url}")
+        
+        # Determine category based on topic content
+        category = "Health"
         print(f"📂 Category: {category}")
         
-        # Generate content using Gemini
-        content = generate_blog_content(topic)
+        # Rewrite content using Gemini
+        print("🔄 Rewriting content...")
+        rewritten_content = rewrite_scraped_content(original_content, topic)
         
-        if content:
+        if rewritten_content:
             # Add images to content
             print("🖼️ Adding images to content...")
-            content_with_images, featured_image_id = add_images_to_content(content, topic, category)
+            content_with_images, featured_image_id = add_images_to_content(rewritten_content, topic, category)
             
             # Post to WordPress
             result = post_to_wordpress(topic, content_with_images, category, featured_image_id)
@@ -562,14 +606,23 @@ def main():
             if result:
                 print(f"✅ Successfully posted: {topic}\n")
                 # Send email notification
-                send_email_notification(topic, category, topic, result['link'])
+                # send_email_notification(topic, category, topic, result['link'])
             else:
                 print(f"❌ Failed to post: {topic}\n")
         else:
-            print(f"❌ Failed to generate content for: {topic}\n")
+            print(f"❌ Failed to rewrite content for: {topic}\n")
         
         # Add a small delay between posts to avoid rate limiting
-        time.sleep(2)
+        time.sleep(3)
+
+
+def main():
+    print("🤖 Starting blog generation and posting process...\n")
+    print(f"📝 Using WordPress site: {wordpress_url}")
+    print(f"👤 Username: {username}\n")
+    
+    # Process scraped articles instead of predefined topics
+    process_scraped_articles()
 
 if __name__ == "__main__":
     main()
