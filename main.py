@@ -177,17 +177,75 @@ def generate_blog_content(topic):
         print(f"Error generating content: {e}")
         return None
 
+def rewrite_title_with_ai(original_title, topic):
+    """Rewrite the title using AI to make it more engaging and SEO-friendly"""
+    
+    title_prompt = f"""
+    Rewrite this title to make it more engaging, SEO-friendly, and professional:
+    
+    Original Title: {original_title}
+    Topic: {topic}
+    
+    REQUIREMENTS:
+    - Make it catchy and click-worthy
+    - Keep it under 60 characters for SEO
+    - Use action words and power words
+    - Make it relevant to the African tech/startup context
+    - Do NOT use hashtags, asterisks, or special formatting
+    - Do NOT copy the original title exactly
+    - Make it unique and original
+    - Focus on the main benefit or insight
+    
+    Return ONLY the new title, no other text or formatting.
+    """
+    
+    try:
+        response = model.generate_content(title_prompt)
+        new_title = response.text.strip()
+        
+        # Clean up any remaining markdown or special characters
+        new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
+        new_title = re.sub(r'\s+', ' ', new_title)  # Replace multiple spaces with single space
+        new_title = new_title.strip()
+        
+        # Fallback if AI fails
+        if not new_title or len(new_title) < 10:
+            # Create a simple fallback title
+            words = topic.split()[:6]  # Take first 6 words
+            new_title = ' '.join(words)
+            if len(new_title) < 20:
+                new_title = f"Latest Updates: {new_title}"
+        
+        return new_title
+        
+    except Exception as e:
+        print(f"Error rewriting title: {e}")
+        # Fallback title
+        words = topic.split()[:6]
+        return ' '.join(words) if words else "Technology News Update"
+
 def clean_content(content, topic):
-    """Clean and format the content, removing repetition, ellipsis, improper headings, and near-duplicates."""
+    """Clean and format the content, removing repetition, ellipsis, improper headings, near-duplicates, and markdown formatting."""
     import re
     # Remove HTML tags and markdown
     content = re.sub(r'<[^>]+>', '', content)
     content = re.sub(r'```[a-zA-Z]*\n', '', content)
     content = re.sub(r'```\n', '', content)
     content = re.sub(r'```', '', content)
+    
+    # Remove markdown formatting BUT PRESERVE ## headings
+    # content = re.sub(r'#{1,6}\s*', '', content)  # REMOVED - Don't remove ## headings!
+    content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)  # Remove **bold**
+    content = re.sub(r'\*(.*?)\*', r'\1', content)  # Remove *italic*
+    content = re.sub(r'`(.*?)`', r'\1', content)  # Remove `code`
+    content = re.sub(r'~~(.*?)~~', r'\1', content)  # Remove ~~strikethrough~~
+    content = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', content)  # Remove [link](url) -> link
+    content = re.sub(r'\[(.*?)\]', r'\1', content)  # Remove [text] -> text
+    
     # Remove ellipsis and bracketed content
     content = re.sub(r'\[.*?\]', '', content)
     content = re.sub(r'\.{2,}', '.', content)
+    
     # Split into paragraphs and clean
     paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
     cleaned = []
@@ -204,13 +262,17 @@ def clean_content(content, topic):
         # Remove lines with just dots
         if re.match(r'^\.+$', para):
             continue
+        # Remove lines that are just markdown formatting (but keep ## headings)
+        if re.match(r'^[*`\s]+$', para) and not para.startswith('##'):
+            continue
         cleaned.append(para)
+    
     # Remove near-duplicate paragraphs
     unique_paragraphs = remove_near_duplicates(cleaned, threshold=0.85)
     return '\n'.join(unique_paragraphs)
 
 def convert_to_html(content):
-    """Convert plain text content to proper HTML format for WordPress"""
+    """Convert plain text content to proper HTML format for WordPress with better heading detection"""
     import re
     
     lines = content.split('\n')
@@ -220,22 +282,27 @@ def convert_to_html(content):
         line = line.strip()
         if not line:
             continue
-            
-        # Check if it's a heading (starts with ## or is all caps)
-        if line.startswith('##') or (line.isupper() and len(line) > 3 and len(line) < 100):
-            # Remove ## if present and format as h2
-            heading = line.replace('##', '').strip()
+        
+        # Detect ## headings BEFORE removing markdown
+        if line.startswith('##'):
+            heading = line[2:].strip()
             html_lines.append(f'<h2>{heading}</h2>')
-        elif line.startswith('###') or (line[0].isupper() and line.endswith(':') and len(line) < 80):
-            # Format as h3
-            heading = line.replace('###', '').strip()
-            if heading.endswith(':'):
-                heading = heading[:-1]
+            continue
+        # Detect subheadings (not used by AI, but keep for future)
+        if line.startswith('###'):
+            heading = line[3:].strip()
             html_lines.append(f'<h3>{heading}</h3>')
-        else:
-            # Regular paragraph
-            if line:
-                html_lines.append(f'<p>{line}</p>')
+            continue
+        
+        # Now clean any remaining markdown
+        line = re.sub(r'#{1,6}\s*', '', line)  # Remove # headings (shouldn't be needed now)
+        line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)  # Remove **bold**
+        line = re.sub(r'\*(.*?)\*', r'\1', line)  # Remove *italic*
+        line = re.sub(r'`(.*?)`', r'\1', line)  # Remove `code`
+        
+        # Regular paragraph - only if it's substantial content
+        if line and len(line) > 20:
+            html_lines.append(f'<p>{line}</p>')
     
     return '\n'.join(html_lines)
 
@@ -492,7 +559,7 @@ def rewrite_scraped_content(original_content, topic):
     """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
     rewrite_prompt = f"""
-    Rewrite the following content about '{topic}' to make it unique, SEO-optimized, and engaging.
+    You are a professional content writer. Rewrite the following content about '{topic}' to make it unique, SEO-optimized, and engaging.
 
     ORIGINAL CONTENT:
     {original_content[:2000]}  # Limit to first 2000 characters to avoid token limits
@@ -504,24 +571,41 @@ def rewrite_scraped_content(original_content, topic):
     - Write 800-1000 words
     - Use clear, professional language
     - Include specific examples and data where relevant
-    - Structure with proper headings (use ## for section headings)
     - Do NOT copy any sentences from the original
     - Make it completely unique while maintaining accuracy
     - Focus on African tech/startup context when relevant
     - Use only complete, original content
-    - NO markdown formatting or HTML tags in the output (plain text only)
 
-    STRUCTURE:
-    1. Main Heading (use ## or <h2>)
-    2. Introduction section (2 paragraphs)
-    3. Main Content (3-4 sections with clear headings)
-    4. Conclusion (1-2 paragraphs)
+    CRITICAL STRUCTURE REQUIREMENTS (MUST FOLLOW):
+    1. Start with a main heading using ## (e.g., "## The Future of Digital Innovation")
+    2. Write 2-3 introduction paragraphs
+    3. Add 3-4 section headings using ## (e.g., "## Key Trends in Technology", "## Impact on African Markets", "## Future Outlook")
+    4. Write 2-3 paragraphs under each section heading
+    5. End with 1-2 conclusion paragraphs
 
-    FORMATTING:
-    - Use ## for section headings
+    FORMATTING REQUIREMENTS:
+    - Use ## for ALL section headings (not ### or #)
+    - Each heading should be descriptive and engaging
     - Write in plain text only
     - Do not repeat the title
-    - Do not use any special characters or formatting
+    - Do not use any special characters or formatting except ## for headings
+    - Do not use the word 'Introduction' as a heading
+    - Make sure each section has proper content under it
+
+    EXAMPLE STRUCTURE:
+    ## Main Heading Here
+    [2-3 introduction paragraphs]
+
+    ## First Section Heading
+    [2-3 paragraphs of content]
+
+    ## Second Section Heading
+    [2-3 paragraphs of content]
+
+    ## Third Section Heading
+    [2-3 paragraphs of content]
+
+    [1-2 conclusion paragraphs]
     """
     
     try:
@@ -529,18 +613,36 @@ def rewrite_scraped_content(original_content, topic):
         response = model.generate_content(rewrite_prompt)
         content = response.text.strip()
         
+        # Debug: Print the raw AI output
+        print("🔍 DEBUG - Raw AI Output:")
+        print("=" * 50)
+        print(content[:500] + "..." if len(content) > 500 else content)
+        print("=" * 50)
+        
         # Clean the content thoroughly
         content = clean_content(content, topic)
         
+        # Debug: Print after cleaning
+        print("🔍 DEBUG - After Cleaning:")
+        print("=" * 50)
+        print(content[:500] + "..." if len(content) > 500 else content)
+        print("=" * 50)
+        
         # Convert to proper HTML format for WordPress
         content = convert_to_html(content)
+        
+        # Debug: Print final HTML
+        print("🔍 DEBUG - Final HTML:")
+        print("=" * 50)
+        print(content[:500] + "..." if len(content) > 500 else content)
+        print("=" * 50)
         
         # Generate keywords separately
         keywords = generate_keywords(topic)
         
         # Add keywords section with proper formatting
         keywords_section = f"""
-<h3>Keywords</h3>
+<h3><strong>Keywords</strong></h3>
 <p><strong>Related Keywords:</strong> {keywords}</p>
 """
         
@@ -580,12 +682,18 @@ def process_scraped_articles():
     
     # Process each scraped article
     for i, article in enumerate(scraped_articles, 1):
-        topic = article['topic']
+        original_topic = article['topic']
         original_content = article['content']
         url = article['url']
+        original_title = article['original_title']
         
-        print(f"📝 Processing article {i}/{len(scraped_articles)}: {topic}")
+        print(f"📝 Processing article {i}/{len(scraped_articles)}: {original_topic}")
         print(f"🔗 Source: {url}")
+        
+        # Rewrite title with AI
+        print("✏️ Rewriting title...")
+        new_title = rewrite_title_with_ai(original_title, original_topic)
+        print(f"📋 New title: {new_title}")
         
         # Determine category based on topic content
         category = "Health"
@@ -593,24 +701,24 @@ def process_scraped_articles():
         
         # Rewrite content using Gemini
         print("🔄 Rewriting content...")
-        rewritten_content = rewrite_scraped_content(original_content, topic)
+        rewritten_content = rewrite_scraped_content(original_content, original_topic)
         
         if rewritten_content:
             # Add images to content
             print("🖼️ Adding images to content...")
-            content_with_images, featured_image_id = add_images_to_content(rewritten_content, topic, category)
+            content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
             
             # Post to WordPress
-            result = post_to_wordpress(topic, content_with_images, category, featured_image_id)
+            result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
             
             if result:
-                print(f"✅ Successfully posted: {topic}\n")
+                print(f"✅ Successfully posted: {new_title}\n")
                 # Send email notification
-                # send_email_notification(topic, category, topic, result['link'])
+                # send_email_notification(original_topic, category, new_title, result['link'])
             else:
-                print(f"❌ Failed to post: {topic}\n")
+                print(f"❌ Failed to post: {new_title}\n")
         else:
-            print(f"❌ Failed to rewrite content for: {topic}\n")
+            print(f"❌ Failed to rewrite content for: {new_title}\n")
         
         # Add a small delay between posts to avoid rate limiting
         time.sleep(3)
