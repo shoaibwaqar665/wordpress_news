@@ -4,6 +4,8 @@ import re
 from urllib.parse import urlparse
 import json
 
+from blog import blog_main
+
 def clean_filename(url):
     """Convert URL to a valid filename"""
     # Parse the URL to get domain and path
@@ -60,57 +62,14 @@ def scrape_url(url):
         print(f"Error scraping {url}: {str(e)}")
         return None
 
-def main():
-    # Read URLs from content.txt
-    with open('content_2.txt', 'r') as f:
-        urls = [line.strip() for line in f if line.strip()]
+def scraper_main(url, category):
     
-    print(f"Found {len(urls)} URLs to scrape")
-    
-    # Create output directory if it doesn't exist
-    output_dir = 'scraped_articles'
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    # Store all scraped data for main.py
-    scraped_data = []
-    
-    # Scrape each URL
-    for url in urls:
-        result = scrape_url(url)
-        
-        if result:
-            # Create filename from URL
-            filename = clean_filename(url)
-            filepath = os.path.join(output_dir, f"{filename}.txt")
-            
-            # Save to file
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"URL: {result['url']}\n")
-                f.write(f"Topic: {result['topic']}\n")
-                f.write(f"Title: {result['title']}\n")
-                f.write(f"{'='*50}\n")
-                f.write(result['text'])
-            
-            # Add to scraped_data for main.py
-            scraped_data.append({
-                'topic': result['topic'],
-                'content': result['text'],
-                'url': result['url'],
-                'original_title': result['title'],
-                'category': 'Technology'
-            })
-            
-            print(f"Saved: {filepath}")
-        else:
-            print(f"Failed to scrape: {url}")
-    
-    # Save all data in JSON format for main.py to read
-    with open('scraped_data.json', 'w', encoding='utf-8') as f:
-        json.dump(scraped_data, f, indent=4, ensure_ascii=False)
-    
-    print(f"✅ Scraping completed! {len(scraped_data)} articles scraped successfully.")
-    print("📄 Data saved to scraped_data.json for main.py to process.")
+    result = scrape_url(url)
+    if result:
+        blog_main(result['topic'],result['text'],result['url'],result['title'],category)
+        return result['topic'], result['title'], result['url']
+    return None
+
 
 if __name__ == "__main__":
-    main()
+    scraper_main("Health")

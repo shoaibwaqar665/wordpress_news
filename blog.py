@@ -655,82 +655,58 @@ def rewrite_scraped_content(original_content, topic):
         print(f"Error rewriting content: {e}")
         return None
 
-def process_scraped_articles():
+def process_scraped_articles(topic,content,url,title,category_received):
     """Process scraped articles from scraper.py and post to WordPress"""
     
-    # Check if scraped data exists
-    if not os.path.exists('scraped_data.json'):
-        print("❌ No scraped data found. Please run scraper.py first.")
-        return
+    original_topic = topic
+    original_content = content
+    url = url
+    original_title = title
     
-    # Load scraped data
-    try:
-        with open('scraped_data.json', 'r', encoding='utf-8') as f:
-            scraped_articles = json.load(f)
-    except Exception as e:
-        print(f"❌ Error loading scraped data: {e}")
-        return
+    print(f"📝 Processing article: {original_topic}")
+    print(f"🔗 Source: {url}")
     
-    print(f"📄 Found {len(scraped_articles)} scraped articles to process")
+    # Rewrite title with AI
+    print("✏️ Rewriting title...")
+    new_title = rewrite_title_with_ai(original_title, original_topic)
+    print(f"📋 New title: {new_title}")
     
-    # Show available categories first
-    print("📋 Available categories:")
-    categories = get_categories()
-    for category in categories:
-        print(f"  - {category['name']} (ID: {category['id']})")
-    print()
+    # Determine category based on topic content
+    category = category_received
+    print(f"📂 Category: {category}")
     
-    # Process each scraped article
-    for i, article in enumerate(scraped_articles, 1):
-        original_topic = article['topic']
-        original_content = article['content']
-        url = article['url']
-        original_title = article['original_title']
+    # Rewrite content using Gemini
+    print("🔄 Rewriting content...")
+    rewritten_content = rewrite_scraped_content(original_content, original_topic)
+    
+    if rewritten_content:
+        # Add images to content
+        print("🖼️ Adding images to content...")
+        content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
         
-        print(f"📝 Processing article {i}/{len(scraped_articles)}: {original_topic}")
-        print(f"🔗 Source: {url}")
+        # Post to WordPress
+        result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
         
-        # Rewrite title with AI
-        print("✏️ Rewriting title...")
-        new_title = rewrite_title_with_ai(original_title, original_topic)
-        print(f"📋 New title: {new_title}")
-        
-        # Determine category based on topic content
-        category = "Health"
-        print(f"📂 Category: {category}")
-        
-        # Rewrite content using Gemini
-        print("🔄 Rewriting content...")
-        rewritten_content = rewrite_scraped_content(original_content, original_topic)
-        
-        if rewritten_content:
-            # Add images to content
-            print("🖼️ Adding images to content...")
-            content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
-            
-            # Post to WordPress
-            result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
-            
-            if result:
-                print(f"✅ Successfully posted: {new_title}\n")
-                # Send email notification
-                # send_email_notification(original_topic, category, new_title, result['link'])
-            else:
-                print(f"❌ Failed to post: {new_title}\n")
+        if result:
+            print(f"✅ Successfully posted: {new_title}\n")
+            # Send email notification
+            # send_email_notification(original_topic, category, new_title, result['link'])
         else:
-            print(f"❌ Failed to rewrite content for: {new_title}\n")
-        
-        # Add a small delay between posts to avoid rate limiting
-        time.sleep(3)
+            print(f"❌ Failed to post: {new_title}\n")
+    else:
+        print(f"❌ Failed to rewrite content for: {new_title}\n")
+    
+    # Add a small delay between posts to avoid rate limiting
+    time.sleep(3)
 
 
-def main():
+def blog_main(topic,content,url,title,category):
     print("🤖 Starting blog generation and posting process...\n")
     print(f"📝 Using WordPress site: {wordpress_url}")
     print(f"👤 Username: {username}\n")
     
     # Process scraped articles instead of predefined topics
-    process_scraped_articles()
+    process_scraped_articles(topic,content,url,title,category)
 
 if __name__ == "__main__":
-    main()
+    blog_main()
