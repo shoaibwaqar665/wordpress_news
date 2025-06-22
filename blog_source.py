@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+import re
 
 
 # url = "https://techpoint.africa/"
@@ -7,7 +8,8 @@ from bs4 import BeautifulSoup
 # url='https://cioafrica.co/'
 # url='https://techmoran.com/'
 # url='https://ventureburn.com/'
-url='https://www.itnewsafrica.com/'
+# url='https://www.itnewsafrica.com/'
+url='https://techlabari.com/'
 # # add headers to the request
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
@@ -42,6 +44,9 @@ with open('links.txt', 'r') as f:
     
     # filter out links containing any unwanted patterns
     filtered_links = []
+    date_formatted_links = []  # Links with year/month format
+    other_links = []  # Other valid links
+    
     for link in links:
         link = link.strip()  # remove newlines
         
@@ -66,7 +71,15 @@ with open('links.txt', 'r') as f:
                 break
                 
         if should_include:
-            filtered_links.append(link)
+            # Check if link follows year/month format (e.g., /2025/06/ or /2024/12/)
+            date_pattern = r'/\d{4}/\d{2}/'
+            if re.search(date_pattern, link):
+                date_formatted_links.append(link)
+            else:
+                other_links.append(link)
+    
+    # Combine links with date-formatted links first, then others
+    filtered_links = date_formatted_links + other_links
     
     # write the filtered links back to file
     with open('links.txt', 'w') as f:
