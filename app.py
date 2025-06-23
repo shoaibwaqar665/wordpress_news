@@ -172,6 +172,7 @@ def list_tasks():
 def send_password():
     # generate a random password
     password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+    
     # send the password to the user's email
     # send the email with the password to 'shoaib.waqar665@gmail.com'
     send_email_notification(password)
