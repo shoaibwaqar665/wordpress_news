@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dbOperations import update_password
+from dbOperations import get_password, update_password
 from scraper import scraper_main
 import threading
 import time
@@ -168,7 +168,7 @@ def list_tasks():
     return jsonify({'tasks': tasks})
 
 # create a route and handler that send newly created password to the user's email
-@app.route('/send-password', methods=['POST'])
+@app.route('/send-password', methods=['GET'])
 def send_password():
     # generate a random password
     password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
@@ -177,7 +177,11 @@ def send_password():
     send_email_notification(password)
     update_password(password)
     return jsonify({'message': 'Password sent to email'})
-    
+
+@app.route('/get-password', methods=['GET'])
+def get_password_handler():
+    password = get_password()
+    return jsonify({'password': password})
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8008)
