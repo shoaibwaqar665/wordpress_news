@@ -184,5 +184,15 @@ def get_password_handler():
     password = get_password()
     return jsonify({'password': password})
 
+# authenticate the user with the password match and return the True
+@app.route('/authenticate', methods=['POST'])
+def authenticate():
+    data = request.get_json()
+    password = data.get('password')
+    if password == get_password():
+        return jsonify({'message': True})
+    else:
+        return jsonify({'message': False})
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8008)
