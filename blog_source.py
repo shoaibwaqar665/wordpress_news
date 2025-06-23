@@ -3,25 +3,25 @@ from bs4 import BeautifulSoup
 import re
 
 
-# url = "https://techpoint.africa/"
-# url = "https://technext.ng/"
-# url='https://cioafrica.co/'
-# url='https://techmoran.com/'
-# url='https://ventureburn.com/'
-# url='https://www.itnewsafrica.com/'
-# url='https://techlabari.com/'
-# url='https://www.ghanaweb.com/GhanaHomePage/africa/'
-# url='https://cairoscene.com/Tech-and-Startups' site is not working
-# url='https://www.wamda.com/'
-# url='https://addisinsight.net/category/technology/'
+# # url = "https://techpoint.africa/"
+# # url = "https://technext.ng/"
+# # url='https://cioafrica.co/'
+# # url='https://techmoran.com/'
+# # url='https://ventureburn.com/'
+# # url='https://www.itnewsafrica.com/'
+# # url='https://techlabari.com/'
+# # url='https://www.ghanaweb.com/GhanaHomePage/africa/'
+# # url='https://cairoscene.com/Tech-and-Startups' site is not working
+# # url='https://www.wamda.com/'
+url='https://addisinsight.net/category/technology/'
 
 
-# # add headers to the request
+# # # add headers to the request
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36"
 }
 
-response = requests.get(url, headers=headers)
+response = requests.get(url, headers=headers, allow_redirects=True)
 
 soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -82,11 +82,14 @@ with open('links.txt', 'r') as f:
             should_include = False
         
         # Check for unwanted patterns
+        if url == 'https://addisinsight.net/category/technology/':
+            unwanted_patterns = ['https://www.addisinsight.net/category/ethiopian-news/africa-news/','https://www.addisinsight.net/category/entertainment-and-arts/ethiopian-books/']
+            
         for pattern in unwanted_patterns:
             if pattern in link:
                 should_include = False
                 break
-                
+          
         if should_include:
             # Check if link follows year/month format (e.g., /2025/06/ or /2024/12/)
             date_pattern = r'/\d{4}/\d{2}/'
@@ -105,4 +108,3 @@ with open('links.txt', 'r') as f:
     with open('links.txt', 'w') as f:
         for link in filtered_links:
             f.write(link + '\n')
-
