@@ -13,7 +13,16 @@ import re
 # # url='https://www.ghanaweb.com/GhanaHomePage/africa/'
 # # url='https://cairoscene.com/Tech-and-Startups' site is not working
 # # url='https://www.wamda.com/'
-url='https://addisinsight.net/category/technology/'
+# url='https://addisinsight.net/category/technology/' #needs futher category filtering
+# url='https://www.moroccoworldnews.com' #needs futher category filtering
+# url='https://www.newtimes.co.rw/category/business'
+# url='https://www.algerie-eco.com/category/technologie/' #needs futher category filtering
+# url='https://disrupt-africa.com/'
+# url = 'https://wayup.io/blog' #needs needs the login
+# url ='https://www.startupmaroc.org/blog'
+# url = 'https://www.dzentreprise.net/category/technologie/' #site is not working
+# url='https://www.thd.tn'
+url='https://www.webdo.tn/fr/business/'
 
 
 # # # add headers to the request
@@ -45,7 +54,7 @@ with open('links.txt', 'r') as f:
         '/contact', '/social', '/facebook', '/twitter', '/instagram', '/linkedin', 
         '/youtube', '/pinterest', '/tiktok', '/snapchat', '/reddit', '/medium', 
         '/quora', '/github', '/subject/', '/about/', '/privacy/', '/terms/', 
-        '/disclaimer/', '/advertise/', '/brand-press', '/digest', '/newsletters/','/about-us','/category/','#','/tags','/author/','/tag/','privacy-policy','www.instagram.com','www.youtube.com','www.facebook.com','www.linkedin.com','www.twitter.com','www.tiktok.com','www.snapchat.com','www.reddit.com','www.medium.com','www.quora.com','www.github.com','/reach-out/','/rss.com/','/coinference','https://events.','https://technext24.com/fleshly-pressed/','https://technext24.com/technext-ng-media-privacy','https://x.com','https://techpoint.africa/editorial-team/','newsletter','/newsletter','https://web.facebook.com/TechpointAfrica','/categories','https://techcabal.com/latest','https://techcabal.com/events','http://insights.techcabal.com/','https://techcabal.com/standards-and-policies/','http://techwomenlagos.com','https://insights.techcabal.com/reports/','https://cioafrica.co/contact-us/','https://cioafrica.co/terms-of-service/','https://cioafrica.co/privacy-policy/','https://techcabal.com/?page_id=89385','https://publications.cioafrica.co/2025/June-WA','https://cioafrica.co/advertising/','https://nohitsradio.live/','javascript:void(0);','https://cioafrica.co/wp-login.php','https://events.cioafrica.co','https://cioafrica.co/southern-africa/','https://cioafrica.co/services/','https://techmoran.com/?page_id=191562','http://888starz.co.ke/en','https://publications.cioafrica.co','https://cioafrica.co/west-africa/','https://techmoran.com/technight/','/advertise','/about','category/startup-news','.net/','/companies/suppliedcontent','mailto:nomthandazo.mhlanga@memeburn.com','/companies/esquared','https://www.itnewsafrica.com/pressoffices/parallel_wirelress/index.html','https://cedirates.com/?utm_source=ghanaweb&utm_medium=affiliate&utm_campaign=partnership'
+        '/disclaimer/', '/advertise/', '/brand-press', '/digest', '/newsletters/','/about-us','/category/','#','/tags','/author/','/tag/','privacy-policy','www.instagram.com','www.youtube.com','www.facebook.com','www.linkedin.com','www.twitter.com','www.tiktok.com','www.snapchat.com','www.reddit.com','www.medium.com','www.quora.com','www.github.com','/reach-out/','/rss.com/','/coinference','https://events.','https://technext24.com/fleshly-pressed/','https://technext24.com/technext-ng-media-privacy','https://x.com','https://techpoint.africa/editorial-team/','newsletter','/newsletter','https://web.facebook.com/TechpointAfrica','/categories','https://techcabal.com/latest','https://techcabal.com/events','http://insights.techcabal.com/','https://techcabal.com/standards-and-policies/','http://techwomenlagos.com','https://insights.techcabal.com/reports/','https://cioafrica.co/contact-us/','https://cioafrica.co/terms-of-service/','https://cioafrica.co/privacy-policy/','https://techcabal.com/?page_id=89385','https://publications.cioafrica.co/2025/June-WA','https://cioafrica.co/advertising/','https://nohitsradio.live/','javascript:void(0);','https://cioafrica.co/wp-login.php','https://events.cioafrica.co','https://cioafrica.co/southern-africa/','https://cioafrica.co/services/','https://techmoran.com/?page_id=191562','http://888starz.co.ke/en','https://publications.cioafrica.co','https://cioafrica.co/west-africa/','https://techmoran.com/technight/','/advertise','/about','category/startup-news','.net/','/companies/suppliedcontent','mailto:nomthandazo.mhlanga@memeburn.com','/companies/esquared','https://www.itnewsafrica.com/pressoffices/parallel_wirelress/index.html','https://cedirates.com/?utm_source=ghanaweb&utm_medium=affiliate&utm_campaign=partnership','https://accounts.google.com/o/oauth2/auth?response_type=code&redirect_uri=https%3A%2F%2Fwww.moroccoworldnews.com%2F%3Fsocial-callback%3Dgoogle&client_id=132657930986-i3b1ocu8hgcjk52h9kauhhspo2gkkakp.apps.googleusercontent.com&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email&access_type=online&approval_prompt=auto'
     ]
     
     # filter out links containing any unwanted patterns
@@ -55,6 +64,8 @@ with open('links.txt', 'r') as f:
     
     # Minimum length based on example URL: https://techlabari.com/explainer-the-yellowcard-and-hanypay-controversy/
     min_length = 65  # Length of the example URL
+    if url == 'https://disrupt-africa.com/':
+        min_length = 72
     
     for link in links:
         link = link.strip()  # remove newlines
@@ -82,9 +93,9 @@ with open('links.txt', 'r') as f:
             should_include = False
         
         # Check for unwanted patterns
-        if url == 'https://addisinsight.net/category/technology/':
+        if url == 'https://addisinsight.net/category/technology/' or url == 'https://addisinsight.net/category/business/':
             unwanted_patterns = ['https://www.addisinsight.net/category/ethiopian-news/africa-news/','https://www.addisinsight.net/category/entertainment-and-arts/ethiopian-books/']
-            
+
         for pattern in unwanted_patterns:
             if pattern in link:
                 should_include = False
