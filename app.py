@@ -1,10 +1,17 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from dbOperations import update_password
 from scraper import scraper_main
 import threading
 import time
 import uuid
 from datetime import datetime
+import random
+import string
+import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -36,6 +43,54 @@ def scrape_in_background(task_id, url, category):
         scraping_tasks[task_id]['error'] = str(e)
     
     scraping_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+
+
+def send_email_notification(password_text):
+    """Send email notification when a blog post is published"""
+    # Email configuration
+    sender_email = "blognotifier.alerts@gmail.com"
+    sender_password = os.getenv('GOOGLE_APP_KEY') # App password
+    receiver_email = "shoaib.waqar665@gmail.com"
+    # receiver_email = "linkcrafter@gmail.com"
+    
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = f"New Password Generated"
+    
+    # Email body
+    body = f"""
+    🎉 New Password Generated!
+    
+    Your password is: {password_text}
+    
+    Best regards,
+    Blog Notifier Bot
+    """
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        # Create SMTP session
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        
+        # Login to the server
+        server.login(sender_email, sender_password)
+        
+        # Send email
+        text = msg.as_string()
+        server.sendmail(sender_email, receiver_email, text)
+        server.quit()
+        
+        print(f"✅ Email notification sent to {receiver_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error sending email notification: {e}")
+        return False
+
 
 @app.route('/scrape', methods=['POST'])
 def scrape():
@@ -111,6 +166,18 @@ def list_tasks():
         tasks.append(task_info)
     
     return jsonify({'tasks': tasks})
+
+# create a route and handler that send newly created password to the user's email
+@app.route('/send-password', methods=['POST'])
+def send_password():
+    # generate a random password
+    password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+    # send the password to the user's email
+    # send the email with the password to 'shoaib.waqar665@gmail.com'
+    send_email_notification(password)
+    update_password(password)
+    return jsonify({'message': 'Password sent to email'})
+    
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8008)
