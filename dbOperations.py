@@ -514,3 +514,40 @@ def soft_delete_url(fetched_url):
         traceback.print_exc()
 
 
+def update_my_blog_url(fetched_url,my_blog_url):
+    conn = None
+    cursor = None
+    
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv('DB_DATABASE'),
+            user=os.getenv('DB_USERNAME'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT')
+        )
+        cursor = conn.cursor()
+
+        # First check if the url exists
+        check_query = """
+            SELECT fetched_url FROM tbl_urls WHERE fetched_url = %s
+        """
+        cursor.execute(check_query, (fetched_url,))
+        if not cursor.fetchone():
+            raise ValueError(f"URL with ID {fetched_url} not found")
+        
+        soft_delete_url_query = """
+            UPDATE tbl_urls SET my_blog_url = %s WHERE fetched_url = %s
+        """
+        cursor.execute(soft_delete_url_query, (my_blog_url,fetched_url))
+        
+        if cursor.rowcount == 0:
+            raise ValueError(f"No URL was updated. URL ID {fetched_url} may not exist or my blog url is already set.")
+            
+        conn.commit()
+        print("My blog url updated successfully.")
+    except psycopg2.Error as e:
+        print(f"Database error: updating my blog url: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+
+

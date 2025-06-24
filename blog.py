@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 import json
 import time
 
-from dbOperations import get_categories_data
+from dbOperations import get_categories_data, update_my_blog_url
 
 # Load environment variables
 load_dotenv()
@@ -676,6 +676,7 @@ def process_scraped_articles(topic,content,url,title,category_received):
         
         if result:
             print(f"✅ Successfully posted: {new_title}\n")
+            update_my_blog_url(url,result['link'])
             # Send email notification
             # send_email_notification(original_topic, category, new_title, result['link'])
         else:
