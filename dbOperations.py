@@ -74,7 +74,7 @@ def get_password():
             conn.close()
 
 # write function to get all categories from tbl_categories
-def get_categories():
+def get_categories_data():
     conn = None
     cursor = None
     
@@ -94,6 +94,8 @@ def get_categories():
         """
         cursor.execute(get_categories_query)
         result = cursor.fetchall()
+        # result is a list of tuples, convert it to a list of strings
+        result = [item[0] for item in result]
         return result
     except psycopg2.Error as e:
         print(f"Database error: getting categories from DB: {str(e)}", file=sys.stderr)
@@ -245,7 +247,7 @@ def get_source_url():
         """
         cursor.execute(get_source_url_query)
         result = cursor.fetchall()
-        return result
+        return result   
     except psycopg2.Error as e:
         print(f"Database error: getting source_url from DB: {str(e)}", file=sys.stderr)
         traceback.print_exc()
@@ -375,11 +377,16 @@ def soft_delete_source_url(source_url_id):
         if conn:
             conn.close()
 
-# write function to insert source_url, category and fetch_url into tbl_url
-def insert_url(source_url, fetch_url):
+# write function to insert source_url, category and fetched_url into tbl_url
+import os
+import sys
+import traceback
+import psycopg2
+
+def insert_url(source_url, fetched_url):
     conn = None
     cursor = None
-    
+
     try:
         conn = psycopg2.connect(
             dbname=os.getenv('DB_DATABASE'),
@@ -389,21 +396,37 @@ def insert_url(source_url, fetch_url):
             port=os.getenv('DB_PORT')
         )
         cursor = conn.cursor()
-        
-        insert_url_query = """
-            INSERT INTO tbl_url (source_url, fetch_url) VALUES (%s, %s)
+
+        # Check if fetched_url already exists
+        check_query = """
+            SELECT 1 FROM tbl_urls WHERE fetched_url = %s
         """
-        cursor.execute(insert_url_query, (source_url, fetch_url))
+        cursor.execute(check_query, (fetched_url,))
+        if cursor.fetchone():
+            print(f"[SKIP] Fetched URL already exists: {fetched_url}")
+            return  # Simply skip if it exists
+
+        # Insert new URL
+        insert_url_query = """
+            INSERT INTO tbl_urls (source_url, fetched_url) VALUES (%s, %s)
+        """
+        cursor.execute(insert_url_query, (source_url, fetched_url))
         conn.commit()
-        print("URL inserted successfully.")
+        print(f"[INSERTED] {fetched_url}")
+        
+    except psycopg2.IntegrityError as e:
+        print(f"[IntegrityError] {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
     except psycopg2.Error as e:
-        print(f"Database error: inserting url into DB: {str(e)}", file=sys.stderr)
+        print(f"[DatabaseError] {str(e)}", file=sys.stderr)
         traceback.print_exc()
         if conn:
             conn.rollback()
         raise
     except Exception as e:
-        print(f"Unexpected error: inserting url into DB: {str(e)}", file=sys.stderr)
+        print(f"[UnexpectedError] {str(e)}", file=sys.stderr)
         traceback.print_exc()
         if conn:
             conn.rollback()
@@ -411,6 +434,9 @@ def insert_url(source_url, fetch_url):
     finally:
         if cursor:
             cursor.close()
+        if conn:
+            conn.close()
+
 
 # write function to get all urls from tbl_url
 def get_urls():
@@ -428,10 +454,12 @@ def get_urls():
         cursor = conn.cursor()
 
         get_urls_query = """
-            SELECT source_url, fetch_url FROM tbl_url
+            SELECT fetched_url FROM tbl_urls WHERE blog_written = '0'
         """
         cursor.execute(get_urls_query)
         result = cursor.fetchall()
+        # result is a list of tuples, convert it to a list of strings
+        result = [item[0] for item in result]
         return result
     except psycopg2.Error as e:
         print(f"Database error: getting urls from DB: {str(e)}", file=sys.stderr)
@@ -448,6 +476,41 @@ def get_urls():
             conn.close()
 
 
+# write a function for soft delete a url
+def soft_delete_url(fetched_url):
+    conn = None
+    cursor = None
+    
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv('DB_DATABASE'),
+            user=os.getenv('DB_USERNAME'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT')
+        )
+        cursor = conn.cursor()
 
+        # First check if the url exists
+        check_query = """
+            SELECT fetched_url FROM tbl_urls WHERE fetched_url = %s
+        """
+        cursor.execute(check_query, (fetched_url,))
+        if not cursor.fetchone():
+            raise ValueError(f"URL with ID {fetched_url} not found")
+        
+        soft_delete_url_query = """
+            UPDATE tbl_urls SET blog_written = '1' WHERE fetched_url = %s
+        """
+        cursor.execute(soft_delete_url_query, (fetched_url,))
+        
+        if cursor.rowcount == 0:
+            raise ValueError(f"No URL was updated. URL ID {fetched_url} may not exist.")
+            
+        conn.commit()
+        print("URL soft deleted successfully.")
+    except psycopg2.Error as e:
+        print(f"Database error: soft deleting url: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
 
 

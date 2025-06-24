@@ -11,6 +11,8 @@ from email.mime.multipart import MIMEMultipart
 import json
 import time
 
+from dbOperations import get_categories_data
+
 # Load environment variables
 load_dotenv()
 
@@ -406,6 +408,8 @@ def send_email_notification(topic, category, post_title, post_link):
         print(f"❌ Error sending email notification: {e}")
         return False
 
+
+
 def post_to_wordpress(title, content, category_name="Health", featured_image_id=None):
     """Post content to WordPress using category name"""
     # Get category ID by name
@@ -612,30 +616,11 @@ def rewrite_scraped_content(original_content, topic):
         # Generate rewritten content
         response = model.generate_content(rewrite_prompt)
         content = response.text.strip()
-        
-        # Debug: Print the raw AI output
-        print("🔍 DEBUG - Raw AI Output:")
-        print("=" * 50)
-        print(content[:500] + "..." if len(content) > 500 else content)
-        print("=" * 50)
-        
         # Clean the content thoroughly
         content = clean_content(content, topic)
         
-        # Debug: Print after cleaning
-        print("🔍 DEBUG - After Cleaning:")
-        print("=" * 50)
-        print(content[:500] + "..." if len(content) > 500 else content)
-        print("=" * 50)
-        
         # Convert to proper HTML format for WordPress
         content = convert_to_html(content)
-        
-        # Debug: Print final HTML
-        print("🔍 DEBUG - Final HTML:")
-        print("=" * 50)
-        print(content[:500] + "..." if len(content) > 500 else content)
-        print("=" * 50)
         
         # Generate keywords separately
         keywords = generate_keywords(topic)
@@ -683,7 +668,9 @@ def process_scraped_articles(topic,content,url,title,category_received):
         # Add images to content
         print("🖼️ Adding images to content...")
         content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
-        
+        category = category_received
+        print(f"📂 Category: {category}")
+      
         # Post to WordPress
         result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
         

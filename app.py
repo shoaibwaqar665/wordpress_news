@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dbOperations import get_categories, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
+from dbOperations import get_categories_data, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scraper_main
 import threading
 import time
@@ -199,7 +199,7 @@ def authenticate():
 @app.route('/get-categories', methods=['GET'])
 def get_categories_handler():
     try:
-        categories = get_categories()
+        categories = get_categories_data()
         if categories is None:
             return jsonify({'error': 'Failed to retrieve categories from database'}), 500
         
