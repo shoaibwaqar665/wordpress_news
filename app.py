@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from blog_source import extract_urls_from_source_url
 from dbOperations import get_categories_data, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scraper_main
 import threading
@@ -386,6 +387,21 @@ def soft_delete_source_url_handler():
         print(f"Error in soft_delete_source_url_handler: {str(e)}")
         return jsonify({'error': 'Internal server error occurred while deleting source URL'}), 500
 
+# create a function that runs with frequency of 8 hours after the server start
+def schedule_task(interval_hours):
+    def loop():
+        while True:
+            extract_urls_from_source_url()
+            time.sleep(interval_hours * 3600)  # Convert hours to seconds
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+
+
+def start_scheduler():
+    schedule_task(interval_hours=8)
+    print("[Scheduler started] Running every 8 hours.")
+
 
 if __name__ == "__main__":
+    start_scheduler()
     app.run(debug=True, host='0.0.0.0', port=8008)

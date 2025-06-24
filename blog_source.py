@@ -4,7 +4,7 @@ import re
 from dbOperations import get_source_url, insert_url
 import time
 
-source_url = get_source_url()
+
 
 
 # # # add headers to the request
@@ -108,8 +108,9 @@ def fetch_urls_from_source_url(url):
         for link in filtered_links:
             insert_url(url, link)
 
-
-for source in source_url:
-    print('now fetching urls from', source[0])
-    fetch_urls_from_source_url(source[0])
-    # time.sleep(3)
+            
+def extract_urls_from_source_url():
+    source_url = get_source_url()
+    for source in source_url:
+        print('now fetching urls from', source[0])
+        fetch_urls_from_source_url(source[0])
