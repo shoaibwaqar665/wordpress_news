@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dbOperations import get_password, update_password
+from dbOperations import get_categories, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scraper_main
 import threading
 import time
@@ -193,6 +193,199 @@ def authenticate():
         return jsonify({'message': True})
     else:
         return jsonify({'message': False})
+
+
+# create a route and handler that returns all categories
+@app.route('/get-categories', methods=['GET'])
+def get_categories_handler():
+    try:
+        categories = get_categories()
+        if categories is None:
+            return jsonify({'error': 'Failed to retrieve categories from database'}), 500
+        
+        # Convert the result to a list of category names
+        category_list = [category[0] for category in categories] if categories else []
+        
+        return jsonify({'categories': category_list})
+    except Exception as e:
+        print(f"Error in get_categories_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while retrieving categories'}), 500
+
+# create a route and handler that inserts a new category
+@app.route('/insert-category', methods=['POST'])
+def insert_category_handler():
+    try:
+        # Check if request has JSON content
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is empty'}), 400
+        
+        category = data.get('category')
+        
+        # Validate category input
+        if not category:
+            return jsonify({'error': 'Category field is required'}), 400
+        
+        if not isinstance(category, str):
+            return jsonify({'error': 'Category must be a string'}), 400
+        
+        # Trim whitespace and validate length
+        category = category.strip()
+        if not category:
+            return jsonify({'error': 'Category cannot be empty or whitespace only'}), 400
+        
+        if len(category) > 255:  # Assuming reasonable max length
+            return jsonify({'error': 'Category name is too long (max 255 characters)'}), 400
+        
+        # Attempt to insert the category
+        insert_category(category)
+        
+        return jsonify({'message': 'Category inserted successfully', 'category': category}), 201
+        
+    except ValueError as e:
+        # Handle validation errors from database functions
+        return jsonify({'error': str(e)}), 409  # Conflict status for duplicate categories
+    except Exception as e:
+        print(f"Error in insert_category_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while inserting category'}), 500
+
+# create a route and handler that soft deletes a category
+@app.route('/soft-delete-category', methods=['POST'])
+def soft_delete_category_handler():
+    try:
+        # Check if request has JSON content
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is empty'}), 400
+        
+        category_id = data.get('category_id')
+        
+        # Validate category_id input
+        if not category_id:
+            return jsonify({'error': 'Category ID field is required'}), 400
+        
+        # Validate that category_id is a valid UUID format
+        try:
+            uuid.UUID(str(category_id))
+        except ValueError:
+            return jsonify({'error': 'Invalid category ID format. Must be a valid UUID'}), 400
+        
+        # Attempt to soft delete the category
+        soft_delete_category(category_id)
+        
+        return jsonify({'message': 'Category soft deleted successfully', 'category_id': category_id})
+        
+    except ValueError as e:
+        # Handle validation errors from database functions
+        return jsonify({'error': str(e)}), 404  # Not Found for non-existent categories
+    except Exception as e:
+        print(f"Error in soft_delete_category_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while deleting category'}), 500
+
+
+# create a route and handler that returns all source_url
+@app.route('/get-source-url', methods=['GET'])
+def get_source_url_handler():
+    try:
+        source_urls = get_source_url()
+        if source_urls is None:
+            return jsonify({'error': 'Failed to retrieve source URLs from database'}), 500
+        
+        # Convert the result to a list of source URLs
+        source_url_list = [url[0] for url in source_urls] if source_urls else []
+        
+        return jsonify({'source_url': source_url_list})
+    except Exception as e:
+        print(f"Error in get_source_url_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while retrieving source URLs'}), 500
+
+# create a route and handler that inserts a new source_url
+@app.route('/insert-source-url', methods=['POST'])
+def insert_source_url_handler():
+    try:
+        # Check if request has JSON content
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is empty'}), 400
+        
+        source_url = data.get('source_url')
+        
+        # Validate source_url input
+        if not source_url:
+            return jsonify({'error': 'Source URL field is required'}), 400
+        
+        if not isinstance(source_url, str):
+            return jsonify({'error': 'Source URL must be a string'}), 400
+        
+        # Trim whitespace and validate length
+        source_url = source_url.strip()
+        if not source_url:
+            return jsonify({'error': 'Source URL cannot be empty or whitespace only'}), 400
+        
+        if len(source_url) > 500:  # Assuming reasonable max length for URLs
+            return jsonify({'error': 'Source URL is too long (max 500 characters)'}), 400
+        
+        # Basic URL validation
+        if not source_url.startswith(('http://', 'https://')):
+            return jsonify({'error': 'Source URL must start with http:// or https://'}), 400
+        
+        # Attempt to insert the source URL
+        insert_source_url(source_url)
+        
+        return jsonify({'message': 'Source URL inserted successfully', 'source_url': source_url}), 201
+        
+    except ValueError as e:
+        # Handle validation errors from database functions
+        return jsonify({'error': str(e)}), 409  # Conflict status for duplicate URLs
+    except Exception as e:
+        print(f"Error in insert_source_url_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while inserting source URL'}), 500
+
+# create a route and handler that soft deletes a source_url
+@app.route('/soft-delete-source-url', methods=['POST'])
+def soft_delete_source_url_handler():
+    try:
+        # Check if request has JSON content
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is empty'}), 400
+        
+        source_url_id = data.get('source_url_id')
+        
+        # Validate source_url_id input
+        if not source_url_id:
+            return jsonify({'error': 'Source URL ID field is required'}), 400
+        
+        # Validate that source_url_id is a valid UUID format
+        try:
+            uuid.UUID(str(source_url_id))
+        except ValueError:
+            return jsonify({'error': 'Invalid source URL ID format. Must be a valid UUID'}), 400
+        
+        # Attempt to soft delete the source URL
+        soft_delete_source_url(source_url_id)
+        
+        return jsonify({'message': 'Source URL soft deleted successfully', 'source_url_id': source_url_id})
+        
+    except ValueError as e:
+        # Handle validation errors from database functions
+        return jsonify({'error': str(e)}), 404  # Not Found for non-existent source URLs
+    except Exception as e:
+        print(f"Error in soft_delete_source_url_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while deleting source URL'}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8008)
