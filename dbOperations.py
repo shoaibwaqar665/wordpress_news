@@ -537,7 +537,7 @@ def update_my_blog_url(fetched_url,my_blog_url):
             raise ValueError(f"URL with ID {fetched_url} not found")
         
         soft_delete_url_query = """
-            UPDATE tbl_urls SET my_blog_url = %s WHERE fetched_url = %s
+            UPDATE tbl_urls SET my_blog_url = %s, blog_written_at = NOW() WHERE fetched_url = %s
         """
         cursor.execute(soft_delete_url_query, (my_blog_url,fetched_url))
         
