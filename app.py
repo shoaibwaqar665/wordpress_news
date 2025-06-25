@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from blog_source import extract_urls_from_source_url
-from dbOperations import get_categories_data, get_password, get_source_url, get_source_url_fetched_url_and_my_blog_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
+from dbOperations import get_categories_data, get_password, get_source_url, get_source_url_data, get_source_url_fetched_url_and_my_blog_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scrap_db_urls_and_write_blogs, scraper_main
 import threading
 import time
@@ -204,10 +204,8 @@ def get_categories_handler():
         if categories is None:
             return jsonify({'error': 'Failed to retrieve categories from database'}), 500
         
-        # Convert the result to a list of category names
-        category_list = [category[0] for category in categories] if categories else []
         
-        return jsonify({'categories': category_list})
+        return jsonify({'categories': categories})
     except Exception as e:
         print(f"Error in get_categories_handler: {str(e)}")
         return jsonify({'error': 'Internal server error occurred while retrieving categories'}), 500
@@ -265,22 +263,16 @@ def soft_delete_category_handler():
         if not data:
             return jsonify({'error': 'Request body is empty'}), 400
         
-        category_id = data.get('category_id')
+        category = data.get('category')
         
         # Validate category_id input
-        if not category_id:
-            return jsonify({'error': 'Category ID field is required'}), 400
-        
-        # Validate that category_id is a valid UUID format
-        try:
-            uuid.UUID(str(category_id))
-        except ValueError:
-            return jsonify({'error': 'Invalid category ID format. Must be a valid UUID'}), 400
+        if not category:
+            return jsonify({'error': 'Category field is required'}), 400
         
         # Attempt to soft delete the category
-        soft_delete_category(category_id)
+        soft_delete_category(category)
         
-        return jsonify({'message': 'Category soft deleted successfully', 'category_id': category_id})
+        return jsonify({'message': 'Category soft deleted successfully', 'category': category})
         
     except ValueError as e:
         # Handle validation errors from database functions
@@ -294,14 +286,12 @@ def soft_delete_category_handler():
 @app.route('/get-source-url', methods=['GET'])
 def get_source_url_handler():
     try:
-        source_urls = get_source_url()
+        source_urls = get_source_url_data()
         if source_urls is None:
             return jsonify({'error': 'Failed to retrieve source URLs from database'}), 500
         
-        # Convert the result to a list of source URLs
-        source_url_list = [url[0] for url in source_urls] if source_urls else []
-        
-        return jsonify({'source_url': source_url_list})
+        # The function now returns a list of dictionaries directly
+        return jsonify({'source_url': source_urls})
     except Exception as e:
         print(f"Error in get_source_url_handler: {str(e)}")
         return jsonify({'error': 'Internal server error occurred while retrieving source URLs'}), 500
@@ -430,5 +420,5 @@ def start_scheduler():
 
 
 if __name__ == "__main__":
-    start_scheduler()
+    # start_scheduler()
     app.run(debug=True, host='0.0.0.0', port=8008)

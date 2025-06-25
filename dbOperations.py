@@ -113,7 +113,7 @@ def get_categories_data():
 
 
 # soft delete a category
-def soft_delete_category(category_id):
+def soft_delete_category(category):
     conn = None
     cursor = None
     
@@ -129,19 +129,19 @@ def soft_delete_category(category_id):
 
         # First check if the category exists
         check_query = """
-            SELECT category_guid FROM tbl_categories WHERE category_guid = %s AND (is_deleted IS NULL OR is_deleted != '1')
+            SELECT category FROM tbl_categories WHERE category = %s AND (is_deleted IS NULL OR is_deleted != '1')
         """
-        cursor.execute(check_query, (category_id,))
+        cursor.execute(check_query, (category,))
         if not cursor.fetchone():
-            raise ValueError(f"Category with ID {category_id} not found or already deleted")
+            raise ValueError(f"Category with ID {category} not found or already deleted")
         
         update_query = """
-            UPDATE tbl_categories SET is_deleted = '1' WHERE category_guid = %s
+            UPDATE tbl_categories SET is_deleted = '1' WHERE category = %s
         """
-        cursor.execute(update_query, (category_id,))
+        cursor.execute(update_query, (category,))
         
         if cursor.rowcount == 0:
-            raise ValueError(f"No category was updated. Category ID {category_id} may not exist.")
+            raise ValueError(f"No category was updated. Category ID {category} may not exist.")
             
         conn.commit()
         print("Category soft deleted successfully.")
@@ -261,6 +261,51 @@ def get_source_url():
             cursor.close()
         if conn:
             conn.close()
+
+def get_source_url_data():
+    conn = None
+    cursor = None
+    
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv('DB_DATABASE'),
+            user=os.getenv('DB_USERNAME'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT')
+        )
+        cursor = conn.cursor()
+
+        get_source_url_query = """
+            SELECT source_url, source_guid, created_at FROM tbl_source_url WHERE is_deleted IS NULL OR is_deleted != '1'
+        """
+        cursor.execute(get_source_url_query)
+        result = cursor.fetchall()
+        
+        # Convert the result to a list of dictionaries for better JSON structure
+        source_urls_list = []
+        for row in result:
+            source_urls_list.append({
+                'source_url': row[0],
+                'source_guid': row[1],
+                'created_at': row[2].isoformat() if row[2] else None
+            })
+        
+        return source_urls_list
+    except psycopg2.Error as e:
+        print(f"Database error: getting source_url from DB: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        raise
+    except Exception as e:
+        print(f"Unexpected error: getting source_url from DB: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 # write a function to insert a new source_url
 def insert_source_url(source_url):
@@ -477,7 +522,7 @@ def get_urls():
 
 
 # write a function for soft delete a url
-def soft_delete_url(fetched_url,category):
+def soft_delete_url(fetched_url, category):
     conn = None
     cursor = None
     
@@ -490,6 +535,13 @@ def soft_delete_url(fetched_url,category):
             port=os.getenv('DB_PORT')
         )
         cursor = conn.cursor()
+
+        # Validate inputs
+        if not fetched_url or not isinstance(fetched_url, str):
+            raise ValueError("Fetched URL must be a non-empty string")
+        
+        if not category or not isinstance(category, str):
+            raise ValueError("Category must be a non-empty string")
 
         # First check if the url exists
         check_query = """
@@ -502,7 +554,7 @@ def soft_delete_url(fetched_url,category):
         soft_delete_url_query = """
             UPDATE tbl_urls SET blog_written = '1', category = %s WHERE fetched_url = %s
         """
-        cursor.execute(soft_delete_url_query, (category,fetched_url))
+        cursor.execute(soft_delete_url_query, (category, fetched_url))
         
         if cursor.rowcount == 0:
             raise ValueError(f"No URL was updated. URL ID {fetched_url} may not exist.")
@@ -512,9 +564,28 @@ def soft_delete_url(fetched_url,category):
     except psycopg2.Error as e:
         print(f"Database error: soft deleting url: {str(e)}", file=sys.stderr)
         traceback.print_exc()
+        if conn:
+            conn.rollback()
+        raise
+    except ValueError as e:
+        print(f"Validation error: {str(e)}", file=sys.stderr)
+        if conn:
+            conn.rollback()
+        raise
+    except Exception as e:
+        print(f"Unexpected error: soft deleting url: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
-def update_my_blog_url(fetched_url,my_blog_url):
+def update_my_blog_url(fetched_url, my_blog_url):
     conn = None
     cursor = None
     
@@ -528,6 +599,17 @@ def update_my_blog_url(fetched_url,my_blog_url):
         )
         cursor = conn.cursor()
 
+        # Validate inputs
+        if not fetched_url or not isinstance(fetched_url, str):
+            raise ValueError("Fetched URL must be a non-empty string")
+        
+        if not my_blog_url or not isinstance(my_blog_url, str):
+            raise ValueError("My blog URL must be a non-empty string")
+        
+        # Basic URL validation
+        if not my_blog_url.startswith(('http://', 'https://')):
+            raise ValueError("My blog URL must start with http:// or https://")
+
         # First check if the url exists
         check_query = """
             SELECT fetched_url FROM tbl_urls WHERE fetched_url = %s
@@ -536,10 +618,10 @@ def update_my_blog_url(fetched_url,my_blog_url):
         if not cursor.fetchone():
             raise ValueError(f"URL with ID {fetched_url} not found")
         
-        soft_delete_url_query = """
+        update_my_blog_url_query = """
             UPDATE tbl_urls SET my_blog_url = %s, blog_written_at = NOW() WHERE fetched_url = %s
         """
-        cursor.execute(soft_delete_url_query, (my_blog_url,fetched_url))
+        cursor.execute(update_my_blog_url_query, (my_blog_url, fetched_url))
         
         if cursor.rowcount == 0:
             raise ValueError(f"No URL was updated. URL ID {fetched_url} may not exist or my blog url is already set.")
@@ -549,6 +631,25 @@ def update_my_blog_url(fetched_url,my_blog_url):
     except psycopg2.Error as e:
         print(f"Database error: updating my blog url: {str(e)}", file=sys.stderr)
         traceback.print_exc()
+        if conn:
+            conn.rollback()
+        raise
+    except ValueError as e:
+        print(f"Validation error: {str(e)}", file=sys.stderr)
+        if conn:
+            conn.rollback()
+        raise
+    except Exception as e:
+        print(f"Unexpected error: updating my blog url: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # write a function to get source_url fetched_url and my_blog_url and blog_written_at
@@ -567,7 +668,10 @@ def get_source_url_fetched_url_and_my_blog_url():
         cursor = conn.cursor()
 
         get_source_url_fetched_url_and_my_blog_url_query = """
-            SELECT source_url, fetched_url, my_blog_url, blog_written_at, category, created_at FROM tbl_urls WHERE blog_written = '1'
+            SELECT source_url, fetched_url, my_blog_url, blog_written_at, category, created_at 
+            FROM tbl_urls 
+            WHERE blog_written = '1'
+            ORDER BY blog_written_at DESC
         """
         cursor.execute(get_source_url_fetched_url_and_my_blog_url_query)
         result = cursor.fetchall()
@@ -585,3 +689,5 @@ def get_source_url_fetched_url_and_my_blog_url():
             cursor.close()
         if conn:
             conn.close()
+
+# write a function 
