@@ -551,3 +551,37 @@ def update_my_blog_url(fetched_url,my_blog_url):
         traceback.print_exc()
 
 
+# write a function to get source_url fetched_url and my_blog_url and blog_written_at
+def get_source_url_fetched_url_and_my_blog_url():
+    conn = None
+    cursor = None
+    
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv('DB_DATABASE'),
+            user=os.getenv('DB_USERNAME'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT')
+        )
+        cursor = conn.cursor()
+
+        get_source_url_fetched_url_and_my_blog_url_query = """
+            SELECT source_url, fetched_url, my_blog_url, blog_written_at FROM tbl_urls WHERE blog_written = '1'
+        """
+        cursor.execute(get_source_url_fetched_url_and_my_blog_url_query)
+        result = cursor.fetchall()
+        return result
+    except psycopg2.Error as e:
+        print(f"Database error: getting source_url fetched_url and my_blog_url and blog_written_at from DB: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        raise
+    except Exception as e:
+        print(f"Unexpected error: getting source_url fetched_url and my_blog_url and blog_written_at from DB: {str(e)}", file=sys.stderr)
+        traceback.print_exc()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

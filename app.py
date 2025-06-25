@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from blog_source import extract_urls_from_source_url
-from dbOperations import get_categories_data, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
+from dbOperations import get_categories_data, get_password, get_source_url, get_source_url_fetched_url_and_my_blog_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scrap_db_urls_and_write_blogs, scraper_main
 import threading
 import time
@@ -386,6 +386,30 @@ def soft_delete_source_url_handler():
     except Exception as e:
         print(f"Error in soft_delete_source_url_handler: {str(e)}")
         return jsonify({'error': 'Internal server error occurred while deleting source URL'}), 500
+
+
+# create a route and handler that returns all source_url fetched_url and my_blog_url and blog_written_at
+@app.route('/get-all-blogs', methods=['GET'])
+def get_all_blogs_handler():
+    try:
+        all_blogs = get_source_url_fetched_url_and_my_blog_url()
+        if all_blogs is None:
+            return jsonify({'error': 'Failed to retrieve blogs from database'}), 500
+        
+        # Convert the result to a list of dictionaries for better JSON structure
+        blogs_list = []
+        for blog in all_blogs:
+            blogs_list.append({
+                'source_url': blog[0],
+                'fetched_url': blog[1],
+                'my_blog_url': blog[2],
+                'blog_written_at': blog[3].isoformat() if blog[3] else None
+            })
+        
+        return jsonify({'all_blogs': blogs_list})
+    except Exception as e:
+        print(f"Error in get_all_blogs_handler: {str(e)}")
+        return jsonify({'error': 'Internal server error occurred while retrieving blogs'}), 500
 
 # create a function that runs with frequency of 8 hours after the server start
 def schedule_task(interval_hours):
