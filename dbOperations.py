@@ -477,7 +477,7 @@ def get_urls():
 
 
 # write a function for soft delete a url
-def soft_delete_url(fetched_url):
+def soft_delete_url(fetched_url,category):
     conn = None
     cursor = None
     
@@ -500,9 +500,9 @@ def soft_delete_url(fetched_url):
             raise ValueError(f"URL with ID {fetched_url} not found")
         
         soft_delete_url_query = """
-            UPDATE tbl_urls SET blog_written = '1' WHERE fetched_url = %s
+            UPDATE tbl_urls SET blog_written = '1', category = %s WHERE fetched_url = %s
         """
-        cursor.execute(soft_delete_url_query, (fetched_url,))
+        cursor.execute(soft_delete_url_query, (category,fetched_url))
         
         if cursor.rowcount == 0:
             raise ValueError(f"No URL was updated. URL ID {fetched_url} may not exist.")

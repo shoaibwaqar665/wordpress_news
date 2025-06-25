@@ -126,7 +126,7 @@ def scrap_db_urls_and_write_blogs():
             print(f"📂 Category: {category}")
             if category:
                 blog_main(result['topic'],result['text'],result['url'],result['title'],category)
-                soft_delete_url(url)
+                soft_delete_url(url,category)
             else:
                 print(f"❌ No category found for {url}")
                 return None
