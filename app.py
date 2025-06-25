@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from blog_source import extract_urls_from_source_url
 from dbOperations import get_categories_data, get_password, get_source_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
-from scraper import scraper_main
+from scraper import scrap_db_urls_and_write_blogs, scraper_main
 import threading
 import time
 import uuid
@@ -392,6 +392,7 @@ def schedule_task(interval_hours):
     def loop():
         while True:
             extract_urls_from_source_url()
+            scrap_db_urls_and_write_blogs
             time.sleep(interval_hours * 3600)  # Convert hours to seconds
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()

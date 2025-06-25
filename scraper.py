@@ -116,7 +116,7 @@ def scraper_main(url, category):
 def scrap_db_urls_and_write_blogs():
     urls = get_urls()
     # get first 5 urls
-    urls = urls[:5]
+    # urls = urls[:5]
     
     for url in urls:
         result = scrape_url(url)
