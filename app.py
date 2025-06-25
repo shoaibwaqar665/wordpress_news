@@ -51,8 +51,8 @@ def send_email_notification(password_text):
     # Email configuration
     sender_email = "blognotifier.alerts@gmail.com"
     sender_password = os.getenv('GOOGLE_APP_KEY') # App password
-    receiver_email = "shoaib.waqar665@gmail.com"
-    # receiver_email = "linkcrafter@gmail.com"
+    # receiver_email = "shoaib.waqar665@gmail.com"
+    receiver_email = "linkcrafter@gmail.com"
     
     # Create message
     msg = MIMEMultipart()

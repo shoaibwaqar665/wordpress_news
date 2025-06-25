@@ -678,7 +678,7 @@ def process_scraped_articles(topic,content,url,title,category_received):
             print(f"✅ Successfully posted: {new_title}\n")
             update_my_blog_url(url,result['link'])
             # Send email notification
-            # send_email_notification(original_topic, category, new_title, result['link'])
+            send_email_notification(original_topic, category, new_title, result['link'])
         else:
             print(f"❌ Failed to post: {new_title}\n")
     else:
