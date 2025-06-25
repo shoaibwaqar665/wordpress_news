@@ -403,7 +403,9 @@ def get_all_blogs_handler():
                 'source_url': blog[0],
                 'fetched_url': blog[1],
                 'my_blog_url': blog[2],
-                'blog_written_at': blog[3].isoformat() if blog[3] else None
+                'blog_written_at': blog[3].isoformat() if blog[3] else None,
+                'category': blog[4],
+                'created_at': blog[5].isoformat() if blog[5] else None
             })
         
         return jsonify({'all_blogs': blogs_list})

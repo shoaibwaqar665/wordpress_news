@@ -567,7 +567,7 @@ def get_source_url_fetched_url_and_my_blog_url():
         cursor = conn.cursor()
 
         get_source_url_fetched_url_and_my_blog_url_query = """
-            SELECT source_url, fetched_url, my_blog_url, blog_written_at FROM tbl_urls WHERE blog_written = '1'
+            SELECT source_url, fetched_url, my_blog_url, blog_written_at, category, created_at FROM tbl_urls WHERE blog_written = '1'
         """
         cursor.execute(get_source_url_fetched_url_and_my_blog_url_query)
         result = cursor.fetchall()
