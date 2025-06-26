@@ -115,9 +115,9 @@ def scraper_main(url, category):
 
 def scrap_db_urls_and_write_blogs():
     urls = get_urls()
-    # get first 5 urls
-    # urls = urls[:5]
-    
+    if not urls:
+        print("No URLs found in the database.")
+        return None
     for url in urls:
         result = scrape_url(url)
         if result:
