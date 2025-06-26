@@ -357,18 +357,23 @@ def generate_excerpt(content, max_length=160):
             break
     return excerpt.strip()[:max_length]
 
-def send_email_notification(topic, category, post_title, post_link):
-    """Send email notification when a blog post is published"""
+def send_email_notification(topic, category, post_title, post_link, receiver_emails=None):
+    """Send email notification to multiple recipients when a blog post is published"""
+    
+    if receiver_emails is None:
+        receiver_emails = [
+            "shoaib.waqar665@gmail.com",
+            "linkcrafter@gmail.com"
+        ]
+    
     # Email configuration
     sender_email = "blognotifier.alerts@gmail.com"
-    sender_password = os.getenv('GOOGLE_APP_KEY') # App password
-    # receiver_email = "shoaib.waqar665@gmail.com"
-    receiver_email = "linkcrafter@gmail.com"
+    sender_password = os.getenv('GOOGLE_APP_KEY')  # App password
     
     # Create message
     msg = MIMEMultipart()
     msg['From'] = sender_email
-    msg['To'] = receiver_email
+    msg['To'] = ", ".join(receiver_emails)
     msg['Subject'] = f"New Blog Post Published: {post_title}"
     
     # Email body
@@ -392,23 +397,18 @@ def send_email_notification(topic, category, post_title, post_link):
         # Create SMTP session
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        
-        # Login to the server
         server.login(sender_email, sender_password)
         
-        # Send email
-        text = msg.as_string()
-        server.sendmail(sender_email, receiver_email, text)
+        # Send email to all recipients
+        server.sendmail(sender_email, receiver_emails, msg.as_string())
         server.quit()
         
-        print(f"✅ Email notification sent to {receiver_email}")
+        print(f"✅ Email notification sent to: {', '.join(receiver_emails)}")
         return True
         
     except Exception as e:
         print(f"❌ Error sending email notification: {e}")
         return False
-
-
 
 def post_to_wordpress(title, content, category_name="Health", featured_image_id=None):
     """Post content to WordPress using category name"""
