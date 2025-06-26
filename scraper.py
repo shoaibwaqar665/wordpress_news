@@ -118,6 +118,7 @@ def scrap_db_urls_and_write_blogs():
     if not urls:
         print("No URLs found in the database.")
         return None
+    print(f"Found {len(urls)} URLs to scrape")
     for url in urls:
         result = scrape_url(url)
         if result:
