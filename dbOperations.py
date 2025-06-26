@@ -442,46 +442,34 @@ def insert_url(source_url, fetched_url):
         )
         cursor = conn.cursor()
 
-        # Check if fetched_url already exists
-        check_query = """
-            SELECT 1 FROM tbl_urls WHERE fetched_url = %s
-        """
-        cursor.execute(check_query, (fetched_url,))
-        if cursor.fetchone():
-            print(f"[SKIP] Fetched URL already exists: {fetched_url}")
-            return  # Simply skip if it exists
-
-        # Insert new URL
         insert_url_query = """
-            INSERT INTO tbl_urls (source_url, fetched_url) VALUES (%s, %s)
+            INSERT INTO tbl_urls (source_url, fetched_url)
+            VALUES (%s, %s)
+            ON CONFLICT (fetched_url) DO NOTHING
         """
         cursor.execute(insert_url_query, (source_url, fetched_url))
         conn.commit()
-        print(f"[INSERTED] {fetched_url}")
-        
-    except psycopg2.IntegrityError as e:
-        print(f"[IntegrityError] {str(e)}", file=sys.stderr)
-        traceback.print_exc()
-        if conn:
-            conn.rollback()
+
+        if cursor.rowcount == 0:
+            print(f"[SKIP] Fetched URL already exists: {fetched_url}")
+        else:
+            print(f"[INSERTED] {fetched_url}")
+
     except psycopg2.Error as e:
         print(f"[DatabaseError] {str(e)}", file=sys.stderr)
         traceback.print_exc()
         if conn:
             conn.rollback()
-        raise
     except Exception as e:
         print(f"[UnexpectedError] {str(e)}", file=sys.stderr)
         traceback.print_exc()
         if conn:
             conn.rollback()
-        raise
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-
 
 # write function to get all urls from tbl_url
 def get_urls():
