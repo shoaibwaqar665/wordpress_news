@@ -43,7 +43,7 @@ if not gemini_api_key:
     raise ValueError("Missing GEMINI_API_KEY in environment variables.")
 
 genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = genai.GenerativeModel("gemini-2.0-flash-lite")
 def get_categories():
     """Fetch all categories from WordPress, handling pagination."""
     categories = []
@@ -68,19 +68,35 @@ def get_categories():
     return categories
 
 
-def get_category_id_by_name(category_name):
-    """Get category ID by name"""
-    categories = get_categories()
-    for category in categories:
-        if category['name'].lower() == category_name.lower():
-            return category['id']
+def get_category_id_by_name(category_names):
+    """Get category IDs by names (accepts single name or list of names)"""
+    # Convert single string to list for consistent processing
+    if isinstance(category_names, str):
+        category_names = [category_names]
     
-    # If category not found, print available categories
-    print(f"❌ Category '{category_name}' not found.")
-    print("Available categories:")
-    for category in categories:
-        print(f"  - {category['name']} (ID: {category['id']})")
-    return None
+    categories = get_categories()
+    matching_ids = []
+    not_found_names = []
+    
+    for category_name in category_names:
+        found = False
+        for category in categories:
+            if category['name'].lower() == category_name.lower():
+                matching_ids.append(category['id'])
+                found = True
+                break
+        
+        if not found:
+            not_found_names.append(category_name)
+    
+    # If any categories not found, print available categories
+    if not_found_names:
+        print(f"❌ Categories not found: {', '.join(not_found_names)}")
+        print("Available categories:")
+        for category in categories:
+            print(f"  - {category['name']} (ID: {category['id']})")
+    
+    return matching_ids
 
 def create_category_if_not_exists(category_name):
     """Create a new category if it doesn't exist"""
@@ -418,8 +434,8 @@ def post_to_wordpress(title, content, category_name="Health", featured_image_id=
     post_data = {
         'title': title,
         'content': content,
-        'status': 'draft',
-        'categories': [category_id],
+        'status': 'publish',
+        'categories': category_id,
         'excerpt': '\u200e',
         'format': 'standard'
     }
@@ -451,7 +467,7 @@ def generate_blog_image(topic, category):
     if not unsplash_access_key:
         print("❌ Unsplash access key not available")
         return None
-        
+    category = category[0]
     try:
         # Create search query based on topic and category
         search_terms = [topic, category]

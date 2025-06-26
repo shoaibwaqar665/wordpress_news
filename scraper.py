@@ -14,7 +14,7 @@ load_dotenv()
 # Initialize Gemini model
 gemini_api_key = os.getenv('GEMINI_API_KEY')
 genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
 
 def extract_topic_from_title(title):
@@ -62,7 +62,7 @@ def scrape_url(url):
 
 def assign_category_with_gemini(content, categories_data):
     """
-    Assigns the most appropriate category to the given content
+    Assigns the most appropriate categories to the given content
     based on a list of categories using Gemini 2.0 Flash.
     """
     try:
@@ -72,9 +72,9 @@ def assign_category_with_gemini(content, categories_data):
         # Construct the prompt
         prompt = f"""
 You are an expert content classifier. Given the content and a list of possible categories,
-choose the **one best matching category** from the list.
+choose the **most relevant categories** from the list that best match the content.
 
-Only return the exact category name.
+Return the categories as a comma-separated list.
 
 Content:
 \"\"\"
@@ -84,7 +84,7 @@ Content:
 Categories:
 {formatted_categories}
 
-Respond with only one category from the list above.
+Respond with only the category names from the list above, separated by commas.
 """
 
         response = model.generate_content(prompt)
@@ -92,16 +92,28 @@ Respond with only one category from the list above.
 
         # Basic cleanup / normalization
         prediction = prediction.strip('"\'')
-
-        if prediction not in categories_data:
-            print(f"[⚠️] Model responded with unexpected category: {prediction}")
-            return None
         
-        return prediction
+        # Split by comma and clean up each category
+        predicted_categories = [cat.strip() for cat in prediction.split(',')]
+        
+        # Filter to only include valid categories
+        valid_categories = []
+        invalid_categories = []
+        
+        for cat in predicted_categories:
+            if cat in categories_data:
+                valid_categories.append(cat)
+            else:
+                invalid_categories.append(cat)
+        
+        if invalid_categories:
+            print(f"[⚠️] Model responded with unexpected categories: {invalid_categories}")
+        
+        return valid_categories
 
     except Exception as e:
-        print(f"[🔥 Error] Failed to assign category: {e}")
-        return None
+        print(f"[🔥 Error] Failed to assign categories: {e}")
+        return []
 
 
 def scraper_main(url, category):

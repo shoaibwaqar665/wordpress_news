@@ -409,7 +409,7 @@ def schedule_task(interval_hours):
         while True:
             # scrap_db_urls_and_write_blogs()
             extract_urls_from_source_url()
-            # scrap_db_urls_and_write_blogs()
+            scrap_db_urls_and_write_blogs()
             time.sleep(interval_hours * 3600)  # Convert hours to seconds
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
