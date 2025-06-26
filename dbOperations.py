@@ -475,7 +475,7 @@ def insert_url(source_url, fetched_url):
 def get_urls():
     conn = None
     cursor = None
-    
+
     try:
         conn = psycopg2.connect(
             dbname=os.getenv('DB_DATABASE'),
@@ -487,13 +487,12 @@ def get_urls():
         cursor = conn.cursor()
 
         get_urls_query = """
-            SELECT fetched_url FROM tbl_urls WHERE blog_written = '0'
+            SELECT DISTINCT fetched_url FROM tbl_urls WHERE blog_written = '0'
         """
         cursor.execute(get_urls_query)
         result = cursor.fetchall()
-        # result is a list of tuples, convert it to a list of strings
-        result = [item[0] for item in result]
-        return result
+        return [item[0] for item in result]
+
     except psycopg2.Error as e:
         print(f"Database error: getting urls from DB: {str(e)}", file=sys.stderr)
         traceback.print_exc()
