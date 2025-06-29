@@ -854,15 +854,15 @@ def rewrite_scraped_content(original_content, topic):
     """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
     rewrite_prompt = f"""
-Rewrite this content about '{topic}' to be unique and SEO-optimized (400-450 words).
+Rewrite this content about '{topic}' to be unique and SEO-optimized (300-400 words).
 
 Original content: {original_content[:1000]}  # Limit to save tokens
 
 Structure:
 1. Main heading (## format)
-2. 1-2 introduction paragraphs
-3. 2-3 sections with ## headings
-4. 1-2 conclusion paragraphs
+2. 1 introduction paragraphs
+3. 1 section with ## headings
+4. 1 conclusion paragraph
 
 Requirements:
 - Completely rewrite in your own words

@@ -355,8 +355,14 @@ def scraper_main(url, category):
     uploaded_urls = []  # Initialize empty array for single URL processing
     result = scrape_url(url)
     if result:
-        uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
-        return result['topic'], result['title'], result['url'], uploaded_urls
+        # Check if article is tech-related before processing
+        if is_tech_related_article(result['title'], result['text']):
+            print(f"[✅] Article confirmed as tech-related: {result['title'][:100]}...")
+            uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+            return result['topic'], result['title'], result['url'], uploaded_urls
+        else:
+            print(f"[❌] Article NOT tech-related, skipping: {result['title'][:100]}...")
+            return None, None, None, []
     return None, None, None, []
 
 
@@ -382,16 +388,24 @@ def scrap_db_urls_and_write_blogs():
             print(f"[Scraper] Processing URL: {url}")
             result = scrape_url(url)
             if result:
-                categories_data = get_categories_data()
-                category = assign_category_with_gemini(result['text'], categories_data)
-                print(f"[Scraper] Category: {category}")
-                if category:
-                    # Pass the uploaded_urls array to collect results
-                    uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
-                    soft_delete_url(url, str(category))
-                    time.sleep(5)
+                # Check if article is tech-related before processing
+                if is_tech_related_article(result['title'], result['text']):
+                    print(f"[✅] Article confirmed as tech-related: {result['title'][:100]}...")
+                    categories_data = get_categories_data()
+                    category = assign_category_with_gemini(result['text'], categories_data)
+                    print(f"[Scraper] Category: {category}")
+                    if category:
+                        # Pass the uploaded_urls array to collect results
+                        uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+                        soft_delete_url(url, str(category))
+                        time.sleep(5)
+                    else:
+                        print(f"[Scraper] No category found for {url}")
+                        continue
                 else:
-                    print(f"[Scraper] No category found for {url}")
+                    print(f"[❌] Article NOT tech-related, skipping: {result['title'][:100]}...")
+                    # Mark URL as processed but not tech-related
+                    soft_delete_url(url, "NOT_TECH_RELATED")
                     continue
             else:
                 print(f"[Scraper] No result found for {url}")
@@ -402,4 +416,108 @@ def scrap_db_urls_and_write_blogs():
         return uploaded_urls
     finally:
         scraping_in_progress = False
+
+
+def is_tech_related_article(title, text, max_retries=3):
+    """
+    Check if the article is technology-related using Gemini AI.
+    Returns True if tech-related, False otherwise.
+    """
+    global current_model_name, model
+    
+    # Use AI to determine tech relevance
+    for attempt in range(max_retries):
+        try:
+            # Wait for rate limit before making request
+            model_type = get_model_type()
+            wait_for_rate_limit(model_type)
+            
+            # Construct the prompt for tech relevance check
+            prompt = f"""
+Determine if this article is technology-related. Consider ALL of the following:
+
+**New Technologies & Tools:**
+- New software, apps, platforms, or digital tools
+- New hardware, devices, gadgets, or equipment
+- Emerging technologies (AI, ML, blockchain, IoT, VR/AR, quantum computing, etc.)
+- New programming languages, frameworks, or development tools
+- New APIs, databases, cloud services, or infrastructure
+- New cybersecurity tools, privacy solutions, or security technologies
+
+**Tech Industry News:**
+- Tech companies, startups, scale-ups, or tech corporations
+- Tech CEOs, founders, executives, or industry leaders
+- Tech funding, investments, IPOs, acquisitions, mergers
+- Tech layoffs, downsizing, restructuring, or business changes
+- Tech market trends, industry reports, or market analysis
+- Tech partnerships, collaborations, or strategic alliances
+
+**Tech Products & Services:**
+- New tech products, features, or updates
+- Tech service launches, expansions, or changes
+- Tech product reviews, comparisons, or evaluations
+- Tech product recalls, issues, or technical problems
+- Tech product pricing, availability, or market positioning
+
+**Tech Events & Developments:**
+- Tech conferences, launches, announcements, or events
+- Tech research, studies, breakthroughs, or innovations
+- Tech regulations, policies, legal issues, or compliance
+- Tech standards, protocols, or industry developments
+- Tech education, training, or skill development
+
+**Tech Issues & Problems:**
+- Tech crashes, outages, bugs, or technical failures
+- Tech security breaches, hacks, data leaks, or cyber attacks
+- Tech privacy issues, data concerns, or ethical problems
+- Tech performance issues, scalability problems, or technical challenges
+- Tech competition, market disruption, or industry changes
+
+**Tech Business & Economy:**
+- Tech stock market news, financial performance, or earnings
+- Tech economic impact, job market, or employment trends
+- Tech trade, import/export, or international tech relations
+- Tech taxation, subsidies, or government tech policies
+
+Article Title: {title}
+Article Content: {text[:1000]}
+
+Respond with only "YES" if tech-related or "NO" if not tech-related.
+Response:"""
+
+            # Record the request for rate limiting
+            rate_limiter.record_request(model_type)
+            
+            response = model.generate_content(prompt)
+            result = response.text.strip().upper()
+            
+            is_tech = result in ['YES', 'Y', 'TRUE', 'TECH', 'TECHNOLOGY']
+            
+            if is_tech:
+                print(f"[✅] AI confirmed tech-related: {title[:100]}...")
+            else:
+                print(f"[❌] AI confirmed NOT tech-related: {title[:100]}...")
+            
+            return is_tech
+
+        except Exception as e:
+            print(f"[🔥 Error] Tech relevance check attempt {attempt + 1}/{max_retries} failed: {e}")
+            
+            if is_rate_limit_error(e):
+                print(f"[⏳] Rate limit detected during tech check, switching model...")
+                switch_model()
+                time.sleep(5)
+                continue
+            else:
+                if attempt < max_retries - 1:
+                    print(f"[🔄] Non-rate-limit error during tech check, trying with different model...")
+                    switch_model()
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"[❌] Tech relevance check failed after {max_retries} attempts")
+                    # Default to False if AI check fails
+                    return False
+    
+    return False
 
