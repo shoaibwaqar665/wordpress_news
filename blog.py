@@ -285,78 +285,6 @@ def generate_content_with_retry(prompt, max_retries=3):
     print(f"[❌] Failed to generate content after {max_retries} attempts")
     return None
 
-# Define countries and categories (same as scraper.py)
-COUNTRIES = {
-    "Brazil", "China", "India", "Kenya", "Nigeria", "North Africa", 
-    "Russia", "South Africa", "UAE", "USA", "World"
-}
-
-CATEGORIES = {
-    "Ai", "Big Exits", "Breaking News", "Business", "Events", "Failures", 
-    "Food", "Founders", "Fundraising", "Growth Hacks", "Health", "Helth", 
-    "Regulations", "Security", "Technology", "Travel", "Trends", "Uncategorized"
-}
-
-def separate_country_and_category(assigned_categories):
-    """Separate countries from categories in the assigned categories list"""
-    countries_found = []
-    categories_found = []
-    
-    for category in assigned_categories:
-        if category in COUNTRIES:
-            countries_found.append(category)
-        elif category in CATEGORIES:
-            categories_found.append(category)
-        else:
-            # If not in either list, treat as category
-            categories_found.append(category)
-    
-    return countries_found, categories_found
-
-def create_topic_combination(countries, categories):
-    """Create a topic combination from countries and categories"""
-    if not countries and not categories:
-        return "Technology News"
-    
-    if not countries:
-        # No country found, use "World"
-        if categories:
-            if len(categories) > 1:
-                # Multiple categories, combine them
-                category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-                return f"{category_phrase} in World"
-            else:
-                return f"{categories[0]} in World"
-        else:
-            return "Technology News in World"
-    
-    if not categories:
-        # No category found, use "Technology"
-        if len(countries) > 1:
-            # Multiple countries, combine them
-            country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-            return f"Technology in {country_phrase}"
-        else:
-            return f"Technology in {countries[0]}"
-    
-    # Both countries and categories exist
-    if len(countries) == 1 and len(categories) == 1:
-        # Simple case: one country, one category
-        return f"{categories[0]} in {countries[0]}"
-    elif len(countries) == 1 and len(categories) > 1:
-        # One country, multiple categories
-        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-        return f"{category_phrase} in {countries[0]}"
-    elif len(countries) > 1 and len(categories) == 1:
-        # Multiple countries, one category
-        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-        return f"{categories[0]} in {country_phrase}"
-    else:
-        # Multiple countries and categories
-        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-        return f"{category_phrase} in {country_phrase}"
-
 def get_categories():
     """Fetch all categories from WordPress, handling pagination."""
     categories = []
@@ -441,35 +369,34 @@ def remove_near_duplicates(paragraphs, threshold=0.85):
             unique_paragraphs.append(para)
     return unique_paragraphs
 
-def generate_blog_content(topic, original_title=None):
+def generate_blog_content(topic):
     """Generate blog content using Gemini AI"""
     
-    if original_title is None:
-        original_title = topic
-    
-    content_prompt = f"""
-Create a comprehensive, engaging blog post about {topic}. 
+    # Optimized prompt for token efficiency
+    main_prompt = f"""
+Write a comprehensive blog post about '{topic}' (800-1000 words).
+
+Structure:
+1. Main heading (## format)
+2. 2 introduction paragraphs
+3. 3-4 sections with ## headings
+4. 1-2 conclusion paragraphs
 
 Requirements:
-- Write in a professional, journalistic style
-- Focus on specific developments, insights, or news
-- Include concrete details, examples, and context
-- Make it informative and valuable to readers
-- Use clear, engaging language
-- Structure with proper headings and paragraphs
-- Include relevant statistics, trends, or expert insights when appropriate
-- Focus on the main story/development, not just general information
-- Make it unique and compelling
-- Avoid generic "overview" content - be specific and actionable
+- SEO-optimized content
+- Professional language
+- Specific examples and data
+- No markdown formatting except ## headings
+- Start directly with main heading
+- Do not use 'Introduction' as heading
 
 Topic: {topic}
-Original Title: {original_title}
 
-Write a compelling blog post that would match an engaging title about this topic:"""
+Content:"""
 
     try:
         # Generate main content using retry logic
-        content = generate_content_with_retry(content_prompt)
+        content = generate_content_with_retry(main_prompt)
         
         if not content:
             print("❌ Failed to generate content after all retries")
@@ -503,28 +430,17 @@ def rewrite_title_with_ai(original_title, topic):
     """Rewrite the title using AI to make it more engaging and SEO-friendly"""
     
     title_prompt = f"""
-Rewrite this title to be engaging, specific, and SEO-friendly (under 60 characters):
+Rewrite this title to be engaging and SEO-friendly (under 60 characters):
 
 Original: {original_title}
-Topic Context: {topic}
+Topic: {topic}
 
 Requirements:
-- Create a solid, specific title that captures the main story/insight
+- Catchy and click-worthy
 - Under 60 characters
-- Use action words and power words
-- Make it catchy and click-worthy
-- Focus on the main benefit, insight, or news
-- Include specific details, numbers, or outcomes when relevant
-- Do NOT use generic format like "Category in Country"
-- Do NOT use hashtags or special formatting
-- Make it unique and compelling
-
-Examples of good titles:
-- "Nigerian Fintech Startup Raises $10M Series A"
-- "AI-Powered Healthcare Platform Launches in Kenya"
-- "South Africa's Digital Banking Revolution"
-- "Tech Giants Invest $50M in African Startups"
-- "New Regulations Transform Nigerian Crypto Market"
+- Action words
+- Relevant to African tech context
+- No hashtags or special formatting
 
 New title:"""
 
@@ -533,36 +449,11 @@ New title:"""
         
         if not new_title:
             print("❌ Failed to rewrite title after all retries")
-            # Create a more engaging fallback title
-            words = topic.split()
-            if len(words) >= 3:
-                # Try to create a more specific title
-                if "in" in words:
-                    # Split by "in" and create a more specific title
-                    parts = topic.split(" in ")
-                    if len(parts) == 2:
-                        category_part = parts[0]
-                        country_part = parts[1]
-                        # Create more specific titles based on category
-                        if "technology" in category_part.lower() or "ai" in category_part.lower():
-                            new_title = f"Revolutionary {category_part} Breakthrough in {country_part}"
-                        elif "business" in category_part.lower() or "fundraising" in category_part.lower():
-                            new_title = f"Major {category_part} Investment Surge in {country_part}"
-                        elif "health" in category_part.lower():
-                            new_title = f"Groundbreaking {category_part} Innovation in {country_part}"
-                        elif "security" in category_part.lower():
-                            new_title = f"Critical {category_part} Update from {country_part}"
-                        else:
-                            new_title = f"Breaking {category_part} News from {country_part}"
-                    else:
-                        new_title = f"Breaking: {topic}"
-                else:
-                    new_title = f"Latest Updates: {topic}"
-            else:
-                new_title = f"Breaking: {topic}"
-            
+            # Create a simple fallback title
+            words = topic.split()[:6]  # Take first 6 words
+            new_title = ' '.join(words)
             if len(new_title) < 20:
-                new_title = f"Latest {topic} News"
+                new_title = f"Latest Updates: {new_title}"
             return new_title
         
         # Clean up any remaining markdown or special characters
@@ -572,61 +463,19 @@ New title:"""
         
         # Fallback if AI fails
         if not new_title or len(new_title) < 10:
-            # Create a more engaging fallback title
-            words = topic.split()
-            if len(words) >= 3:
-                if "in" in words:
-                    parts = topic.split(" in ")
-                    if len(parts) == 2:
-                        category_part = parts[0]
-                        country_part = parts[1]
-                        # Create more specific titles based on category
-                        if "technology" in category_part.lower() or "ai" in category_part.lower():
-                            new_title = f"Revolutionary {category_part} Breakthrough in {country_part}"
-                        elif "business" in category_part.lower() or "fundraising" in category_part.lower():
-                            new_title = f"Major {category_part} Investment Surge in {country_part}"
-                        elif "health" in category_part.lower():
-                            new_title = f"Groundbreaking {category_part} Innovation in {country_part}"
-                        elif "security" in category_part.lower():
-                            new_title = f"Critical {category_part} Update from {country_part}"
-                        else:
-                            new_title = f"Breaking {category_part} News from {country_part}"
-                    else:
-                        new_title = f"Breaking: {topic}"
-                else:
-                    new_title = f"Latest Updates: {topic}"
-            else:
-                new_title = f"Breaking: {topic}"
+            # Create a simple fallback title
+            words = topic.split()[:6]  # Take first 6 words
+            new_title = ' '.join(words)
+            if len(new_title) < 20:
+                new_title = f"Latest Updates: {new_title}"
         
         return new_title
         
     except Exception as e:
         print(f"Error rewriting title: {e}")
-        # Create a more engaging fallback title
-        words = topic.split()
-        if len(words) >= 3:
-            if "in" in words:
-                parts = topic.split(" in ")
-                if len(parts) == 2:
-                    category_part = parts[0]
-                    country_part = parts[1]
-                    # Create more specific titles based on category
-                    if "technology" in category_part.lower() or "ai" in category_part.lower():
-                        return f"Revolutionary {category_part} Breakthrough in {country_part}"
-                    elif "business" in category_part.lower() or "fundraising" in category_part.lower():
-                        return f"Major {category_part} Investment Surge in {country_part}"
-                    elif "health" in category_part.lower():
-                        return f"Groundbreaking {category_part} Innovation in {country_part}"
-                    elif "security" in category_part.lower():
-                        return f"Critical {category_part} Update from {country_part}"
-                    else:
-                        return f"Breaking {category_part} News from {country_part}"
-                else:
-                    return f"Breaking: {topic}"
-            else:
-                return f"Latest Updates: {topic}"
-        else:
-            return f"Breaking: {topic}"
+        # Fallback title
+        words = topic.split()[:6]
+        return ' '.join(words) if words else "Technology News Update"
 
 def clean_content(content, topic):
     """Clean and format the content, removing repetition, ellipsis, improper headings, near-duplicates, and markdown formatting."""
@@ -714,7 +563,6 @@ def generate_keywords(topic):
     """Generate relevant keywords for the topic"""
     keyword_prompt = f"""
 Generate 8-10 SEO keywords for '{topic}'.
-Include keywords related to all categories and country/region if mentioned.
 Return only keywords separated by commas.
 
 Keywords:"""
@@ -798,17 +646,17 @@ def send_email_notification_blog(uploaded_urls, receiver_emails=None):
     if len(uploaded_urls) == 1:
         post = uploaded_urls[0]
         body = f"""
-        🎉 New Blog Post Published!
-        
-    📝 Topic: {post['original_topic']}
-    📂 Category: {post['category']}
-    📋 Title: {post['title']}
-    🔗 View Post: {post['link']}
-        
-        Your blog post has been successfully published to WordPress.
+🎉 New Blog Post Published!
 
-    Best regards,
-    Blog Notifier Bot
+📝 Topic: {post['original_topic']}
+📂 Category: {post['category']}
+📋 Title: {post['title']}
+🔗 View Post: {post['link']}
+
+Your blog post has been successfully published to WordPress.
+
+Best regards,
+Blog Notifier Bot
 """
     else:
         body = f"""
@@ -1006,27 +854,24 @@ def rewrite_scraped_content(original_content, topic):
     """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
     rewrite_prompt = f"""
-Create a comprehensive, engaging blog post about {topic} based on this original content.
+Rewrite this content about '{topic}' to be unique and SEO-optimized (400-450 words).
 
 Original content: {original_content[:1000]}  # Limit to save tokens
 
+Structure:
+1. Main heading (## format)
+2. 1-2 introduction paragraphs
+3. 2-3 sections with ## headings
+4. 1-2 conclusion paragraphs
+
 Requirements:
-- Write in a professional, journalistic style
-- Focus on specific developments, insights, or news from the original content
-- Include concrete details, examples, and context
-- Make it informative and valuable to readers
-- Use clear, engaging language
-- Structure with proper headings and paragraphs
-- Include relevant statistics, trends, or expert insights when appropriate
-- Focus on the main story/development, not just general information
-- Make it unique and compelling
-- Avoid generic "overview" content - be specific and actionable
 - Completely rewrite in your own words
 - SEO-optimized with relevant keywords
-- Include country/region-specific insights if mentioned in the topic
-- Comprehensive coverage if multiple categories are mentioned in the topic
+- Professional language
+- No markdown except ## headings
+- Focus on African tech context when relevant
 
-Write a compelling blog post that would match an engaging title about this topic:"""
+Content:"""
 
     try:
         # Generate rewritten content using retry logic
@@ -1060,7 +905,7 @@ Write a compelling blog post that would match an engaging title about this topic
         print(f"Error rewriting content: {e}")
         return None
 
-def process_scraped_articles(topic, content, url, title, category_received, uploaded_urls):
+def process_scraped_articles(topic,content,url,title,category_received,uploaded_urls):
     """Process scraped articles from scraper.py and post to WordPress"""
     
     original_topic = topic
@@ -1071,57 +916,35 @@ def process_scraped_articles(topic, content, url, title, category_received, uplo
     print(f"📝 Processing article: {original_topic}")
     print(f"🔗 Source: {url}")
     
-    # Handle category_received (could be string or list)
-    if isinstance(category_received, str):
-        assigned_categories = [category_received]
-    else:
-        assigned_categories = category_received
-    
-    print(f"📂 Assigned Categories: {assigned_categories}")
-    
-    # Separate countries and categories
-    countries, categories = separate_country_and_category(assigned_categories)
-    print(f"🌍 Countries: {countries}, 📂 Categories: {categories}")
-    
-    # Create topic combination for content generation
-    topic_combination = create_topic_combination(countries, categories)
-    print(f"🎯 Topic Combination for Content: {topic_combination}")
-    
-    # Rewrite title with AI using the topic combination
+    # Rewrite title with AI
     print("✏️ Rewriting title...")
-    new_title = rewrite_title_with_ai(original_title, topic_combination)
+    new_title = rewrite_title_with_ai(original_title, original_topic)
     print(f"📋 New title: {new_title}")
     
-    # Rewrite content using Gemini with the topic combination
+    # Determine category based on topic content
+    category = category_received
+    print(f"📂 Category: {category}")
+    
+    # Rewrite content using Gemini
     print("🔄 Rewriting content...")
-    rewritten_content = rewrite_scraped_content(original_content, topic_combination)
+    rewritten_content = rewrite_scraped_content(original_content, original_topic)
     
     if rewritten_content:
         # Add images to content
         print("🖼️ Adding images to content...")
-        content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, assigned_categories)
-        
-        # Post to WordPress - use the first category for WordPress category assignment
-        if assigned_categories:
-            wordpress_category = assigned_categories[0]  # Use first category for WordPress
-        else:
-            wordpress_category = "Technology"  # Default fallback
-        
-        print(f"📂 WordPress Category: {wordpress_category}")
-        
-        result = post_to_wordpress(new_title, content_with_images, wordpress_category, featured_image_id)
+        content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
+        category = category_received
+        print(f"📂 Category: {category}")
+      
+        # Post to WordPress
+        result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
         
         if result:
             print(f"✅ Successfully posted: {new_title}\n")
-            update_my_blog_url(url, result['link'])
+            update_my_blog_url(url,result['link'])
+            # Send email notification
             # append title category and link to uploaded_urls
-            uploaded_urls.append({
-                'title': new_title, 
-                'category': assigned_categories, 
-                'link': result['link'], 
-                'original_topic': original_topic,
-                'topic_combination': topic_combination
-            })
+            uploaded_urls.append({'title': new_title, 'category': category, 'link': result['link'], 'original_topic': original_topic})
             # send_email_notification(original_topic, category, new_title, result['link'])
         else:
             print(f"❌ Failed to post: {new_title}\n")

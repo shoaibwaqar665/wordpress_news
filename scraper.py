@@ -224,78 +224,6 @@ def is_rate_limit_error(error):
     ]
     return any(indicator in error_str for indicator in rate_limit_indicators)
 
-# Define countries and categories
-COUNTRIES = {
-    "Brazil", "China", "India", "Kenya", "Nigeria", "North Africa", 
-    "Russia", "South Africa", "UAE", "USA", "World"
-}
-
-CATEGORIES = {
-    "Ai", "Big Exits", "Breaking News", "Business", "Events", "Failures", 
-    "Food", "Founders", "Fundraising", "Growth Hacks", "Health", "Helth", 
-    "Regulations", "Security", "Technology", "Travel", "Trends", "Uncategorized"
-}
-
-def separate_country_and_category(assigned_categories):
-    """Separate countries from categories in the assigned categories list"""
-    countries_found = []
-    categories_found = []
-    
-    for category in assigned_categories:
-        if category in COUNTRIES:
-            countries_found.append(category)
-        elif category in CATEGORIES:
-            categories_found.append(category)
-        else:
-            # If not in either list, treat as category
-            categories_found.append(category)
-    
-    return countries_found, categories_found
-
-def create_topic_combination(countries, categories):
-    """Create a topic combination from countries and categories"""
-    if not countries and not categories:
-        return "Technology News"
-    
-    if not countries:
-        # No country found, use "World"
-        if categories:
-            if len(categories) > 1:
-                # Multiple categories, combine them
-                category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-                return f"{category_phrase} in World"
-            else:
-                return f"{categories[0]} in World"
-        else:
-            return "Technology News in World"
-    
-    if not categories:
-        # No category found, use "Technology"
-        if len(countries) > 1:
-            # Multiple countries, combine them
-            country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-            return f"Technology in {country_phrase}"
-        else:
-            return f"Technology in {countries[0]}"
-    
-    # Both countries and categories exist
-    if len(countries) == 1 and len(categories) == 1:
-        # Simple case: one country, one category
-        return f"{categories[0]} in {countries[0]}"
-    elif len(countries) == 1 and len(categories) > 1:
-        # One country, multiple categories
-        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-        return f"{category_phrase} in {countries[0]}"
-    elif len(countries) > 1 and len(categories) == 1:
-        # Multiple countries, one category
-        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-        return f"{categories[0]} in {country_phrase}"
-    else:
-        # Multiple countries and categories
-        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
-        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
-        return f"{category_phrase} in {country_phrase}"
-
 def extract_topic_from_title(title):
     """Extract a clean topic from the article title"""
     if not title:
@@ -427,21 +355,7 @@ def scraper_main(url, category):
     uploaded_urls = []  # Initialize empty array for single URL processing
     result = scrape_url(url)
     if result:
-        # For single URL processing, use the provided category
-        if isinstance(category, str):
-            assigned_categories = [category]
-        else:
-            assigned_categories = category
-        
-        # Separate countries and categories
-        countries, categories = separate_country_and_category(assigned_categories)
-        print(f"[Scraper] Countries: {countries}, Categories: {categories}")
-        
-        # Create topic combination
-        topic_combination = create_topic_combination(countries, categories)
-        print(f"[Scraper] Topic Combination: {topic_combination}")
-        
-        uploaded_urls = blog_main(topic_combination, result['text'], result['url'], result['title'], assigned_categories, uploaded_urls)
+        uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
         return result['topic'], result['title'], result['url'], uploaded_urls
     return None, None, None, []
 
@@ -469,21 +383,12 @@ def scrap_db_urls_and_write_blogs():
             result = scrape_url(url)
             if result:
                 categories_data = get_categories_data()
-                assigned_categories = assign_category_with_gemini(result['text'], categories_data)
-                print(f"[Scraper] Assigned Categories: {assigned_categories}")
-                
-                if assigned_categories:
-                    # Separate countries and categories
-                    countries, categories = separate_country_and_category(assigned_categories)
-                    print(f"[Scraper] Countries: {countries}, Categories: {categories}")
-                    
-                    # Create topic combination
-                    topic_combination = create_topic_combination(countries, categories)
-                    print(f"[Scraper] Topic Combination: {topic_combination}")
-                    
+                category = assign_category_with_gemini(result['text'], categories_data)
+                print(f"[Scraper] Category: {category}")
+                if category:
                     # Pass the uploaded_urls array to collect results
-                    uploaded_urls = blog_main(topic_combination, result['text'], result['url'], result['title'], assigned_categories, uploaded_urls)
-                    soft_delete_url(url, str(assigned_categories))
+                    uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+                    soft_delete_url(url, str(category))
                     time.sleep(5)
                 else:
                     print(f"[Scraper] No category found for {url}")
@@ -497,5 +402,4 @@ def scrap_db_urls_and_write_blogs():
         return uploaded_urls
     finally:
         scraping_in_progress = False
-
 
