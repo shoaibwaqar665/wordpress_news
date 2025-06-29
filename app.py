@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from blog import send_email_notification_blog
 from blog_source import extract_urls_from_source_url
 from dbOperations import get_categories_data, get_password, get_source_url, get_source_url_data, get_source_url_fetched_url_and_my_blog_url, insert_category, insert_source_url, soft_delete_category, soft_delete_source_url, update_password
 from scraper import scrap_db_urls_and_write_blogs, scraper_main
@@ -409,7 +410,12 @@ def schedule_task(interval_hours):
         while True:
             # scrap_db_urls_and_write_blogs()
             extract_urls_from_source_url()
-            scrap_db_urls_and_write_blogs()
+            uploaded_data = scrap_db_urls_and_write_blogs()
+            print(f"Uploaded URLs: {uploaded_data}")
+            if uploaded_data:
+                send_email_notification_blog(uploaded_data)
+            else:
+                print("No posts were uploaded, skipping email notification.")
             time.sleep(interval_hours * 3600)  # Convert hours to seconds
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()

@@ -6,16 +6,51 @@ import json
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
-from blog import blog_main
+from blog import blog_main, send_email_notification_blog
 from dbOperations import get_categories_data, get_urls, soft_delete_url
+import time
 
 load_dotenv()
 
 # Initialize Gemini model
 gemini_api_key = os.getenv('GEMINI_API_KEY')
 genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
+# Model configurations
+MODELS = {
+    'primary': "gemini-2.0-flash",
+    'fallback': "gemini-2.0-flash-lite"
+}
+
+current_model_name = 'primary'
+model = genai.GenerativeModel(MODELS[current_model_name])
+
+def switch_model():
+    """Switch between primary and fallback models"""
+    global current_model_name, model
+    
+    if current_model_name == 'primary':
+        current_model_name = 'fallback'
+        print(f"[🔄] Switching to fallback model: {MODELS[current_model_name]}")
+    else:
+        current_model_name = 'primary'
+        print(f"[🔄] Switching back to primary model: {MODELS[current_model_name]}")
+    
+    model = genai.GenerativeModel(MODELS[current_model_name])
+    return model
+
+def is_rate_limit_error(error):
+    """Check if the error is a rate limiting error"""
+    error_str = str(error).lower()
+    rate_limit_indicators = [
+        'rate limit',
+        'quota exceeded',
+        'too many requests',
+        'rate exceeded',
+        'quota limit',
+        'resource exhausted'
+    ]
+    return any(indicator in error_str for indicator in rate_limit_indicators)
 
 def extract_topic_from_title(title):
     """Extract a clean topic from the article title"""
@@ -60,17 +95,20 @@ def scrape_url(url):
         return None
 
 
-def assign_category_with_gemini(content, categories_data):
+def assign_category_with_gemini(content, categories_data, max_retries=3):
     """
     Assigns the most appropriate categories to the given content
-    based on a list of categories using Gemini 2.0 Flash.
+    based on a list of categories using Gemini 2.0 Flash with rate limiting handling.
     """
-    try:
-        # Format categories as bullet list
-        formatted_categories = "\n".join(f"- {cat}" for cat in categories_data)
+    global current_model_name, model
+    
+    for attempt in range(max_retries):
+        try:
+            # Format categories as bullet list
+            formatted_categories = "\n".join(f"- {cat}" for cat in categories_data)
 
-        # Construct the prompt
-        prompt = f"""
+            # Construct the prompt
+            prompt = f"""
 You are an expert content classifier. Given the content and a list of possible categories,
 choose the **most relevant categories** from the list that best match the content.
 
@@ -87,50 +125,72 @@ Categories:
 Respond with only the category names from the list above, separated by commas.
 """
 
-        response = model.generate_content(prompt)
-        prediction = response.text.strip()
+            response = model.generate_content(prompt)
+            prediction = response.text.strip()
 
-        # Basic cleanup / normalization
-        prediction = prediction.strip('"\'')
-        
-        # Split by comma and clean up each category
-        predicted_categories = [cat.strip() for cat in prediction.split(',')]
-        
-        # Filter to only include valid categories
-        valid_categories = []
-        invalid_categories = []
-        
-        for cat in predicted_categories:
-            if cat in categories_data:
-                valid_categories.append(cat)
+            # Basic cleanup / normalization
+            prediction = prediction.strip('"\'')
+            
+            # Split by comma and clean up each category
+            predicted_categories = [cat.strip() for cat in prediction.split(',')]
+            
+            # Filter to only include valid categories
+            valid_categories = []
+            invalid_categories = []
+            
+            for cat in predicted_categories:
+                if cat in categories_data:
+                    valid_categories.append(cat)
+                else:
+                    invalid_categories.append(cat)
+            
+            if invalid_categories:
+                print(f"[⚠️] Model responded with unexpected categories: {invalid_categories}")
+            
+            return valid_categories
+
+        except Exception as e:
+            print(f"[🔥 Error] Attempt {attempt + 1}/{max_retries} failed: {e}")
+            
+            if is_rate_limit_error(e):
+                print(f"[⏳] Rate limit detected, switching model...")
+                switch_model()
+                # Add a small delay before retrying
+                time.sleep(2)
+                continue
             else:
-                invalid_categories.append(cat)
-        
-        if invalid_categories:
-            print(f"[⚠️] Model responded with unexpected categories: {invalid_categories}")
-        
-        return valid_categories
-
-    except Exception as e:
-        print(f"[🔥 Error] Failed to assign categories: {e}")
-        return []
+                # For non-rate-limit errors, try switching model anyway
+                if attempt < max_retries - 1:
+                    print(f"[🔄] Non-rate-limit error, trying with different model...")
+                    switch_model()
+                    time.sleep(1)
+                    continue
+                else:
+                    print(f"[❌] All attempts failed. Final error: {e}")
+                    return []
+    
+    print(f"[❌] Failed to assign categories after {max_retries} attempts")
+    return []
 
 
 def scraper_main(url, category):
-    
+    uploaded_urls = []  # Initialize empty array for single URL processing
     result = scrape_url(url)
     if result:
-        blog_main(result['topic'],result['text'],result['url'],result['title'],category)
-        return result['topic'], result['title'], result['url']
-    return None
+        uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+        return result['topic'], result['title'], result['url'], uploaded_urls
+    return None, None, None, []
 
 
 def scrap_db_urls_and_write_blogs():
     urls = get_urls()
     if not urls:
         print("No URLs found in the database.")
-        return None
+        return []
     print(f"Found {len(urls)} URLs to scrape")
+    
+    uploaded_urls = []  # Initialize array to collect uploaded posts
+    
     for url in urls:
         result = scrape_url(url)
         if result:
@@ -138,15 +198,26 @@ def scrap_db_urls_and_write_blogs():
             category = assign_category_with_gemini(result['text'], categories_data)
             print(f"📂 Category: {category}")
             if category:
-                blog_main(result['topic'],result['text'],result['url'],result['title'],category)
-                soft_delete_url(url,category)
+                # Pass the uploaded_urls array to collect results
+                uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+                soft_delete_url(url, str(category))
+                time.sleep(5)
             else:
                 print(f"❌ No category found for {url}")
                 continue
         else:
             print(f"❌ No result found for {url}")
-            return None
+            # retry for 3 times
+            continue
+    
+    return uploaded_urls
 
 if __name__ == "__main__":
     # scraper_main("Health")
-    scrap_db_urls_and_write_blogs()
+    uploaded_data = scrap_db_urls_and_write_blogs()
+    print(f"Uploaded URLs: {uploaded_data}")
+    if uploaded_data:
+        send_email_notification_blog(uploaded_data)
+    else:
+        print("No posts were uploaded, skipping email notification.")
+

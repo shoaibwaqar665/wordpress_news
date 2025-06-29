@@ -43,7 +43,74 @@ if not gemini_api_key:
     raise ValueError("Missing GEMINI_API_KEY in environment variables.")
 
 genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel("gemini-2.0-flash-lite")
+
+# Model configurations
+MODELS = {
+    'primary': "gemini-2.0-flash",
+    'fallback': "gemini-2.0-flash-lite"
+}
+
+current_model_name = 'primary'
+model = genai.GenerativeModel(MODELS[current_model_name])
+
+def switch_model():
+    """Switch between primary and fallback models"""
+    global current_model_name, model
+    
+    if current_model_name == 'primary':
+        current_model_name = 'fallback'
+        print(f"[🔄] Switching to fallback model: {MODELS[current_model_name]}")
+    else:
+        current_model_name = 'primary'
+        print(f"[🔄] Switching back to primary model: {MODELS[current_model_name]}")
+    
+    model = genai.GenerativeModel(MODELS[current_model_name])
+    return model
+
+def is_rate_limit_error(error):
+    """Check if the error is a rate limiting error"""
+    error_str = str(error).lower()
+    rate_limit_indicators = [
+        'rate limit',
+        'quota exceeded',
+        'too many requests',
+        'rate exceeded',
+        'quota limit',
+        'resource exhausted'
+    ]
+    return any(indicator in error_str for indicator in rate_limit_indicators)
+
+def generate_content_with_retry(prompt, max_retries=3):
+    """Generate content with retry logic and model switching"""
+    global current_model_name, model
+    
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            print(f"[🔥 Error] Attempt {attempt + 1}/{max_retries} failed: {e}")
+            
+            if is_rate_limit_error(e):
+                print(f"[⏳] Rate limit detected, switching model...")
+                switch_model()
+                # Add a small delay before retrying
+                time.sleep(2)
+                continue
+            else:
+                # For non-rate-limit errors, try switching model anyway
+                if attempt < max_retries - 1:
+                    print(f"[🔄] Non-rate-limit error, trying with different model...")
+                    switch_model()
+                    time.sleep(1)
+                    continue
+                else:
+                    print(f"[❌] All attempts failed. Final error: {e}")
+                    return None
+    
+    print(f"[❌] Failed to generate content after {max_retries} attempts")
+    return None
+
 def get_categories():
     """Fetch all categories from WordPress, handling pagination."""
     categories = []
@@ -167,9 +234,12 @@ def generate_blog_content(topic):
     """
     
     try:
-        # Generate main content
-        response = model.generate_content(main_prompt)
-        content = response.text.strip()
+        # Generate main content using retry logic
+        content = generate_content_with_retry(main_prompt)
+        
+        if not content:
+            print("❌ Failed to generate content after all retries")
+            return None
         
         # Clean the content thoroughly
         content = clean_content(content, topic)
@@ -218,8 +288,16 @@ def rewrite_title_with_ai(original_title, topic):
     """
     
     try:
-        response = model.generate_content(title_prompt)
-        new_title = response.text.strip()
+        new_title = generate_content_with_retry(title_prompt)
+        
+        if not new_title:
+            print("❌ Failed to rewrite title after all retries")
+            # Create a simple fallback title
+            words = topic.split()[:6]  # Take first 6 words
+            new_title = ' '.join(words)
+            if len(new_title) < 20:
+                new_title = f"Latest Updates: {new_title}"
+            return new_title
         
         # Clean up any remaining markdown or special characters
         new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
@@ -334,8 +412,15 @@ def generate_keywords(topic):
     """
     
     try:
-        response = model.generate_content(keyword_prompt)
-        keywords = response.text.strip()
+        keywords = generate_content_with_retry(keyword_prompt)
+        
+        if not keywords:
+            print("❌ Failed to generate keywords after all retries")
+            # Generate fallback keywords based on topic
+            topic_words = topic.lower().split()
+            fallback_keywords = topic_words + ['technology', 'innovation', 'digital', 'transformation', 'future', 'trends', 'industry', 'development']
+            keywords = ', '.join(fallback_keywords[:10])
+            return keywords
         
         # Clean keywords
         keywords = keywords.replace('\n', ', ')
@@ -373,8 +458,12 @@ def generate_excerpt(content, max_length=160):
             break
     return excerpt.strip()[:max_length]
 
-def send_email_notification(topic, category, post_title, post_link, receiver_emails=None):
-    """Send email notification to multiple recipients when a blog post is published"""
+def send_email_notification_blog(uploaded_urls, receiver_emails=None):
+    """Send email notification to multiple recipients when blog posts are published"""
+    
+    if not uploaded_urls:
+        print("📧 No posts to notify about")
+        return False
     
     if receiver_emails is None:
         receiver_emails = [
@@ -390,22 +479,51 @@ def send_email_notification(topic, category, post_title, post_link, receiver_ema
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = ", ".join(receiver_emails)
-    msg['Subject'] = f"New Blog Post Published: {post_title}"
     
-    # Email body
-    body = f"""
-    🎉 New Blog Post Published!
+    # Set subject based on number of posts
+    if len(uploaded_urls) == 1:
+        msg['Subject'] = f"New Blog Post Published: {uploaded_urls[0]['title']}"
+    else:
+        msg['Subject'] = f"New Blog Posts Published: {len(uploaded_urls)} Articles"
     
-    📝 Topic: {topic}
-    📂 Category: {category}
-    📋 Title: {post_title}
-    🔗 View Post: {post_link}
-    
-    Your blog post has been successfully published to WordPress.
-    
-    Best regards,
-    Blog Notifier Bot
-    """
+    # Build email body
+    if len(uploaded_urls) == 1:
+        post = uploaded_urls[0]
+        body = f"""
+🎉 New Blog Post Published!
+
+📝 Topic: {post['original_topic']}
+📂 Category: {post['category']}
+📋 Title: {post['title']}
+🔗 View Post: {post['link']}
+
+Your blog post has been successfully published to WordPress.
+
+Best regards,
+Blog Notifier Bot
+"""
+    else:
+        body = f"""
+🎉 New Blog Posts Published!
+
+📊 Total Posts: {len(uploaded_urls)}
+
+"""
+        for i, post in enumerate(uploaded_urls, 1):
+            body += f"""
+📝 Post {i}:
+   Topic: {post['original_topic']}
+   Category: {post['category']}
+   Title: {post['title']}
+   🔗 View Post: {post['link']}
+
+"""
+        body += """
+All blog posts have been successfully published to WordPress.
+
+Best regards,
+Blog Notifier Bot
+"""
     
     msg.attach(MIMEText(body, 'plain'))
     
@@ -420,6 +538,7 @@ def send_email_notification(topic, category, post_title, post_link, receiver_ema
         server.quit()
         
         print(f"✅ Email notification sent to: {', '.join(receiver_emails)}")
+        print(f"📧 Notified about {len(uploaded_urls)} post(s)")
         return True
         
     except Exception as e:
@@ -588,7 +707,7 @@ def rewrite_scraped_content(original_content, topic):
     - Rewrite the content completely in your own words
     - Keep the same main topic and key information
     - Make it SEO-optimized with relevant keywords
-    - Write 800-1000 words
+    - Write 400-450 words
     - Use clear, professional language
     - Include specific examples and data where relevant
     - Do NOT copy any sentences from the original
@@ -598,9 +717,9 @@ def rewrite_scraped_content(original_content, topic):
 
     CRITICAL STRUCTURE REQUIREMENTS (MUST FOLLOW):
     1. Start with a main heading using ## (e.g., "## The Future of Digital Innovation")
-    2. Write 2-3 introduction paragraphs
-    3. Add 3-4 section headings using ## (e.g., "## Key Trends in Technology", "## Impact on African Markets", "## Future Outlook")
-    4. Write 2-3 paragraphs under each section heading
+    2. Write 1-2 introduction paragraphs
+    3. Add 2-3 section headings using ## (e.g., "## Key Trends in Technology", "## Impact on African Markets", "## Future Outlook")
+    4. Write 1-2 paragraphs under each section heading
     5. End with 1-2 conclusion paragraphs
 
     FORMATTING REQUIREMENTS:
@@ -614,24 +733,28 @@ def rewrite_scraped_content(original_content, topic):
 
     EXAMPLE STRUCTURE:
     ## Main Heading Here
-    [2-3 introduction paragraphs]
+    [1-2 introduction paragraphs]
 
     ## First Section Heading
-    [2-3 paragraphs of content]
+    [1-2 paragraphs of content]
 
     ## Second Section Heading
-    [2-3 paragraphs of content]
+    [1-2 paragraphs of content]
 
     ## Third Section Heading
-    [2-3 paragraphs of content]
+    [1-2 paragraphs of content]
 
     [1-2 conclusion paragraphs]
     """
     
     try:
-        # Generate rewritten content
-        response = model.generate_content(rewrite_prompt)
-        content = response.text.strip()
+        # Generate rewritten content using retry logic
+        content = generate_content_with_retry(rewrite_prompt)
+        
+        if not content:
+            print("❌ Failed to rewrite content after all retries")
+            return None
+        
         # Clean the content thoroughly
         content = clean_content(content, topic)
         
@@ -656,7 +779,7 @@ def rewrite_scraped_content(original_content, topic):
         print(f"Error rewriting content: {e}")
         return None
 
-def process_scraped_articles(topic,content,url,title,category_received):
+def process_scraped_articles(topic,content,url,title,category_received,uploaded_urls):
     """Process scraped articles from scraper.py and post to WordPress"""
     
     original_topic = topic
@@ -694,7 +817,9 @@ def process_scraped_articles(topic,content,url,title,category_received):
             print(f"✅ Successfully posted: {new_title}\n")
             update_my_blog_url(url,result['link'])
             # Send email notification
-            send_email_notification(original_topic, category, new_title, result['link'])
+            # append title category and link to uploaded_urls
+            uploaded_urls.append({'title': new_title, 'category': category, 'link': result['link'], 'original_topic': original_topic})
+            # send_email_notification(original_topic, category, new_title, result['link'])
         else:
             print(f"❌ Failed to post: {new_title}\n")
     else:
@@ -702,15 +827,17 @@ def process_scraped_articles(topic,content,url,title,category_received):
     
     # Add a small delay between posts to avoid rate limiting
     time.sleep(3)
+    return uploaded_urls
 
 
-def blog_main(topic,content,url,title,category):
+def blog_main(topic,content,url,title,category,uploaded_urls):
     print("🤖 Starting blog generation and posting process...\n")
     print(f"📝 Using WordPress site: {wordpress_url}")
     print(f"👤 Username: {username}\n")
     
     # Process scraped articles instead of predefined topics
-    process_scraped_articles(topic,content,url,title,category)
+    uploaded_urls = process_scraped_articles(topic,content,url,title,category,uploaded_urls)
+    return uploaded_urls
 
 if __name__ == "__main__":
     blog_main()
