@@ -442,18 +442,25 @@ def insert_url(source_url, fetched_url):
         )
         cursor = conn.cursor()
 
+        # First check if the URL already exists
+        check_url_query = """
+            SELECT fetched_url FROM tbl_urls WHERE fetched_url = %s
+        """
+        cursor.execute(check_url_query, (fetched_url,))
+        
+        if cursor.fetchone():
+            print(f"[SKIP] Fetched URL already exists: {fetched_url}")
+            return
+        
+        # If URL doesn't exist, insert it
         insert_url_query = """
             INSERT INTO tbl_urls (source_url, fetched_url)
             VALUES (%s, %s)
-            ON CONFLICT (fetched_url) DO NOTHING
         """
         cursor.execute(insert_url_query, (source_url, fetched_url))
         conn.commit()
 
-        if cursor.rowcount == 0:
-            print(f"[SKIP] Fetched URL already exists: {fetched_url}")
-        else:
-            print(f"[INSERTED] {fetched_url}")
+        print(f"[INSERTED] {fetched_url}")
 
     except psycopg2.Error as e:
         print(f"[DatabaseError] {str(e)}", file=sys.stderr)

@@ -10,11 +10,74 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import json
 import time
+from datetime import datetime, timedelta
 
 from dbOperations import get_categories_data, update_my_blog_url
 
 # Load environment variables
 load_dotenv()
+
+# Rate limiting tracking for blog content generation
+class BlogRateLimiter:
+    def __init__(self):
+        self.primary_requests = []  # Flash requests
+        self.fallback_requests = []  # Flash-Lite requests
+        self.primary_rpm = 15  # Gemini 2.0 Flash RPM
+        self.fallback_rpm = 30  # Gemini 2.0 Flash-Lite RPM
+    
+    def can_make_request(self, model_type='primary'):
+        """Check if we can make a request based on rate limits"""
+        now = datetime.now()
+        window_start = now - timedelta(minutes=1)
+        
+        if model_type == 'primary':
+            requests = self.primary_requests
+            rpm_limit = self.primary_rpm
+        else:
+            requests = self.fallback_requests
+            rpm_limit = self.fallback_rpm
+        
+        # Clean old requests (older than 1 minute)
+        requests[:] = [req_time for req_time in requests if req_time > window_start]
+        
+        # Check RPM limit
+        if len(requests) >= rpm_limit:
+            return False
+        
+        return True
+    
+    def record_request(self, model_type='primary'):
+        """Record a request for rate limiting"""
+        if model_type == 'primary':
+            self.primary_requests.append(datetime.now())
+        else:
+            self.fallback_requests.append(datetime.now())
+    
+    def get_wait_time(self, model_type='primary'):
+        """Calculate how long to wait before next request"""
+        now = datetime.now()
+        window_start = now - timedelta(minutes=1)
+        
+        if model_type == 'primary':
+            requests = self.primary_requests
+            rpm_limit = self.primary_rpm
+        else:
+            requests = self.fallback_requests
+            rpm_limit = self.fallback_rpm
+        
+        # Clean old requests
+        requests[:] = [req_time for req_time in requests if req_time > window_start]
+        
+        if len(requests) >= rpm_limit:
+            # Find the oldest request in the window
+            oldest_request = min(requests)
+            wait_until = oldest_request + timedelta(minutes=1)
+            return max(0, (wait_until - now).total_seconds())
+        
+        return 0
+
+# Initialize blog rate limiter
+blog_rate_limiter = BlogRateLimiter()
 
 # WordPress credentials from environment variables
 username = os.getenv('WORDPRESS_USERNAME')
@@ -67,6 +130,14 @@ def switch_model():
     model = genai.GenerativeModel(MODELS[current_model_name])
     return model
 
+def wait_for_rate_limit(model_type='primary'):
+    """Wait if necessary to respect rate limits"""
+    wait_time = blog_rate_limiter.get_wait_time(model_type)
+    if wait_time > 0:
+        print(f"[⏳] Rate limit reached for {model_type} model. Waiting {wait_time:.1f} seconds...")
+        time.sleep(wait_time)
+    return True
+
 def is_rate_limit_error(error):
     """Check if the error is a rate limiting error"""
     error_str = str(error).lower()
@@ -76,7 +147,9 @@ def is_rate_limit_error(error):
         'too many requests',
         'rate exceeded',
         'quota limit',
-        'resource exhausted'
+        'resource exhausted',
+        '429',
+        'rate limit exceeded'
     ]
     return any(indicator in error_str for indicator in rate_limit_indicators)
 
@@ -86,23 +159,38 @@ def generate_content_with_retry(prompt, max_retries=3):
     
     for attempt in range(max_retries):
         try:
+            # Wait for rate limit before making request
+            model_type = 'primary' if current_model_name == 'primary' else 'fallback'
+            wait_for_rate_limit(model_type)
+            
+            # Record the request for rate limiting
+            blog_rate_limiter.record_request(model_type)
+            
             response = model.generate_content(prompt)
-            return response.text.strip()
+            content = response.text.strip()
+            
+            if content:
+                print(f"[✅] Successfully generated content with {model_type} model")
+                return content
+            else:
+                print(f"[❌] Empty response from {model_type} model, retrying...")
+                continue
+            
         except Exception as e:
             print(f"[🔥 Error] Attempt {attempt + 1}/{max_retries} failed: {e}")
             
             if is_rate_limit_error(e):
                 print(f"[⏳] Rate limit detected, switching model...")
                 switch_model()
-                # Add a small delay before retrying
-                time.sleep(2)
+                # Add a longer delay for rate limit errors
+                time.sleep(5)
                 continue
             else:
                 # For non-rate-limit errors, try switching model anyway
                 if attempt < max_retries - 1:
                     print(f"[🔄] Non-rate-limit error, trying with different model...")
                     switch_model()
-                    time.sleep(1)
+                    time.sleep(2)
                     continue
                 else:
                     print(f"[❌] All attempts failed. Final error: {e}")
@@ -198,41 +286,28 @@ def remove_near_duplicates(paragraphs, threshold=0.85):
 def generate_blog_content(topic):
     """Generate blog content using Gemini AI"""
     
-    # Stricter prompt with uniqueness
+    # Optimized prompt for token efficiency
     main_prompt = f"""
-    Write a comprehensive, SEO-optimized blog post about '{topic}'.
+Write a comprehensive blog post about '{topic}' (800-1000 words).
 
-    STRICT REQUIREMENTS:
-    - The first paragraph after the heading must NOT repeat or paraphrase the heading.
-    - Each section must be unique and not repeat previous content.
-    - Do NOT repeat any sentence or paragraph.
-    - Do NOT use the word 'Introduction' as a heading or inline.
-    - Do NOT use ellipsis ([...]) or incomplete sentences.
-    - Do NOT use the word 'Introduction' at the start of any paragraph.
-    - Start with a proper heading (e.g., ## or <h2>), not with the word 'Introduction'.
-    - Use only complete, original content.
-    - Write exactly 800-1000 words.
-    - Use clear, professional language.
-    - Include specific examples and data where relevant.
-    - NO markdown formatting or HTML tags in the output (plain text only).
+Structure:
+1. Main heading (## format)
+2. 2 introduction paragraphs
+3. 3-4 sections with ## headings
+4. 1-2 conclusion paragraphs
 
-    STRUCTURE (follow exactly):
-    1. Main Heading (use ## or <h2>, do not use 'Introduction')
-    2. Introduction section (2 paragraphs, but do not use the word 'Introduction')
-    3. Main Content (3-4 sections with clear headings)
-    4. Conclusion (1-2 paragraphs, do not use the word 'Conclusion' as a heading)
+Requirements:
+- SEO-optimized content
+- Professional language
+- Specific examples and data
+- No markdown formatting except ## headings
+- Start directly with main heading
+- Do not use 'Introduction' as heading
 
-    FORMATTING:
-    - Use ## for section headings
-    - Write in plain text only
-    - Do not repeat the title
-    - Do not use any special characters or formatting
-    - Do not use the word 'Introduction' as a heading or inline
-    - Do not use ellipsis ([...]) or incomplete sentences
-    - Do not repeat any content
-    - Start directly with the main heading
-    """
-    
+Topic: {topic}
+
+Content:"""
+
     try:
         # Generate main content using retry logic
         content = generate_content_with_retry(main_prompt)
@@ -269,24 +344,20 @@ def rewrite_title_with_ai(original_title, topic):
     """Rewrite the title using AI to make it more engaging and SEO-friendly"""
     
     title_prompt = f"""
-    Rewrite this title to make it more engaging, SEO-friendly, and professional:
-    
-    Original Title: {original_title}
-    Topic: {topic}
-    
-    REQUIREMENTS:
-    - Make it catchy and click-worthy
-    - Keep it under 60 characters for SEO
-    - Use action words and power words
-    - Make it relevant to the African tech/startup context
-    - Do NOT use hashtags, asterisks, or special formatting
-    - Do NOT copy the original title exactly
-    - Make it unique and original
-    - Focus on the main benefit or insight
-    
-    Return ONLY the new title, no other text or formatting.
-    """
-    
+Rewrite this title to be engaging and SEO-friendly (under 60 characters):
+
+Original: {original_title}
+Topic: {topic}
+
+Requirements:
+- Catchy and click-worthy
+- Under 60 characters
+- Action words
+- Relevant to African tech context
+- No hashtags or special formatting
+
+New title:"""
+
     try:
         new_title = generate_content_with_retry(title_prompt)
         
@@ -405,12 +476,11 @@ def convert_to_html(content):
 def generate_keywords(topic):
     """Generate relevant keywords for the topic"""
     keyword_prompt = f"""
-    Generate 8-10 relevant SEO keywords for a blog post about '{topic}'.
-    Return ONLY the keywords separated by commas, no other text or formatting.
-    Make them specific and relevant to the topic.
-    Include both broad and specific keywords.
-    """
-    
+Generate 8-10 SEO keywords for '{topic}'.
+Return only keywords separated by commas.
+
+Keywords:"""
+
     try:
         keywords = generate_content_with_retry(keyword_prompt)
         
@@ -698,55 +768,25 @@ def rewrite_scraped_content(original_content, topic):
     """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
     rewrite_prompt = f"""
-    You are a professional content writer. Rewrite the following content about '{topic}' to make it unique, SEO-optimized, and engaging.
+Rewrite this content about '{topic}' to be unique and SEO-optimized (400-450 words).
 
-    ORIGINAL CONTENT:
-    {original_content[:2000]}  # Limit to first 2000 characters to avoid token limits
+Original content: {original_content[:1000]}  # Limit to save tokens
 
-    REQUIREMENTS:
-    - Rewrite the content completely in your own words
-    - Keep the same main topic and key information
-    - Make it SEO-optimized with relevant keywords
-    - Write 400-450 words
-    - Use clear, professional language
-    - Include specific examples and data where relevant
-    - Do NOT copy any sentences from the original
-    - Make it completely unique while maintaining accuracy
-    - Focus on African tech/startup context when relevant
-    - Use only complete, original content
+Structure:
+1. Main heading (## format)
+2. 1-2 introduction paragraphs
+3. 2-3 sections with ## headings
+4. 1-2 conclusion paragraphs
 
-    CRITICAL STRUCTURE REQUIREMENTS (MUST FOLLOW):
-    1. Start with a main heading using ## (e.g., "## The Future of Digital Innovation")
-    2. Write 1-2 introduction paragraphs
-    3. Add 2-3 section headings using ## (e.g., "## Key Trends in Technology", "## Impact on African Markets", "## Future Outlook")
-    4. Write 1-2 paragraphs under each section heading
-    5. End with 1-2 conclusion paragraphs
+Requirements:
+- Completely rewrite in your own words
+- SEO-optimized with relevant keywords
+- Professional language
+- No markdown except ## headings
+- Focus on African tech context when relevant
 
-    FORMATTING REQUIREMENTS:
-    - Use ## for ALL section headings (not ### or #)
-    - Each heading should be descriptive and engaging
-    - Write in plain text only
-    - Do not repeat the title
-    - Do not use any special characters or formatting except ## for headings
-    - Do not use the word 'Introduction' as a heading
-    - Make sure each section has proper content under it
+Content:"""
 
-    EXAMPLE STRUCTURE:
-    ## Main Heading Here
-    [1-2 introduction paragraphs]
-
-    ## First Section Heading
-    [1-2 paragraphs of content]
-
-    ## Second Section Heading
-    [1-2 paragraphs of content]
-
-    ## Third Section Heading
-    [1-2 paragraphs of content]
-
-    [1-2 conclusion paragraphs]
-    """
-    
     try:
         # Generate rewritten content using retry logic
         content = generate_content_with_retry(rewrite_prompt)

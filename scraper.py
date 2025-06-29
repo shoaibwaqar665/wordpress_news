@@ -9,12 +9,78 @@ from dotenv import load_dotenv
 from blog import blog_main, send_email_notification_blog
 from dbOperations import get_categories_data, get_urls, soft_delete_url
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv()
 
 # Global flag to prevent multiple scraping instances
 scraping_in_progress = False
+
+# Rate limiting tracking
+class RateLimiter:
+    def __init__(self):
+        self.primary_requests = []  # Flash requests
+        self.fallback_requests = []  # Flash-Lite requests
+        self.primary_rpm = 15  # Gemini 2.0 Flash RPM
+        self.fallback_rpm = 30  # Gemini 2.0 Flash-Lite RPM
+        self.primary_tpm = 1000000  # Flash TPM
+        self.fallback_tpm = 1000000  # Flash-Lite TPM
+        self.primary_rpd = 200  # Flash RPD
+        self.fallback_rpd = 200  # Flash-Lite RPD
+    
+    def can_make_request(self, model_type='primary'):
+        """Check if we can make a request based on rate limits"""
+        now = datetime.now()
+        window_start = now - timedelta(minutes=1)
+        
+        if model_type == 'primary':
+            requests = self.primary_requests
+            rpm_limit = self.primary_rpm
+        else:
+            requests = self.fallback_requests
+            rpm_limit = self.fallback_rpm
+        
+        # Clean old requests (older than 1 minute)
+        requests[:] = [req_time for req_time in requests if req_time > window_start]
+        
+        # Check RPM limit
+        if len(requests) >= rpm_limit:
+            return False
+        
+        return True
+    
+    def record_request(self, model_type='primary'):
+        """Record a request for rate limiting"""
+        if model_type == 'primary':
+            self.primary_requests.append(datetime.now())
+        else:
+            self.fallback_requests.append(datetime.now())
+    
+    def get_wait_time(self, model_type='primary'):
+        """Calculate how long to wait before next request"""
+        now = datetime.now()
+        window_start = now - timedelta(minutes=1)
+        
+        if model_type == 'primary':
+            requests = self.primary_requests
+            rpm_limit = self.primary_rpm
+        else:
+            requests = self.fallback_requests
+            rpm_limit = self.fallback_rpm
+        
+        # Clean old requests
+        requests[:] = [req_time for req_time in requests if req_time > window_start]
+        
+        if len(requests) >= rpm_limit:
+            # Find the oldest request in the window
+            oldest_request = min(requests)
+            wait_until = oldest_request + timedelta(minutes=1)
+            return max(0, (wait_until - now).total_seconds())
+        
+        return 0
+
+# Initialize rate limiter
+rate_limiter = RateLimiter()
 
 # Initialize Gemini model
 gemini_api_key = os.getenv('GEMINI_API_KEY')
@@ -43,6 +109,14 @@ def switch_model():
     model = genai.GenerativeModel(MODELS[current_model_name])
     return model
 
+def wait_for_rate_limit(model_type='primary'):
+    """Wait if necessary to respect rate limits"""
+    wait_time = rate_limiter.get_wait_time(model_type)
+    if wait_time > 0:
+        print(f"[⏳] Rate limit reached for {model_type} model. Waiting {wait_time:.1f} seconds...")
+        time.sleep(wait_time)
+    return True
+
 def is_rate_limit_error(error):
     """Check if the error is a rate limiting error"""
     error_str = str(error).lower()
@@ -52,7 +126,9 @@ def is_rate_limit_error(error):
         'too many requests',
         'rate exceeded',
         'quota limit',
-        'resource exhausted'
+        'resource exhausted',
+        '429',
+        'rate limit exceeded'
     ]
     return any(indicator in error_str for indicator in rate_limit_indicators)
 
@@ -108,27 +184,28 @@ def assign_category_with_gemini(content, categories_data, max_retries=3):
     
     for attempt in range(max_retries):
         try:
+            # Wait for rate limit before making request
+            model_type = 'primary' if current_model_name == 'primary' else 'fallback'
+            wait_for_rate_limit(model_type)
+            
             # Format categories as bullet list
             formatted_categories = "\n".join(f"- {cat}" for cat in categories_data)
 
-            # Construct the prompt
+            # Construct the prompt - optimized for token efficiency
             prompt = f"""
-You are an expert content classifier. Given the content and a list of possible categories,
-choose the **most relevant categories** from the list that best match the content.
+Classify this content into the most relevant categories from the list below.
+Return only category names separated by commas.
 
-Return the categories as a comma-separated list.
-
-Content:
-\"\"\"
-{content}
-\"\"\"
+Content: {content[:1500]}  # Limit content to save tokens
 
 Categories:
 {formatted_categories}
 
-Respond with only the category names from the list above, separated by commas.
-"""
+Categories:"""
 
+            # Record the request for rate limiting
+            rate_limiter.record_request(model_type)
+            
             response = model.generate_content(prompt)
             prediction = response.text.strip()
 
@@ -151,7 +228,12 @@ Respond with only the category names from the list above, separated by commas.
             if invalid_categories:
                 print(f"[⚠️] Model responded with unexpected categories: {invalid_categories}")
             
-            return valid_categories
+            if valid_categories:
+                print(f"[✅] Successfully categorized with {model_type} model")
+                return valid_categories
+            else:
+                print(f"[❌] No valid categories found, retrying...")
+                continue
 
         except Exception as e:
             print(f"[🔥 Error] Attempt {attempt + 1}/{max_retries} failed: {e}")
@@ -159,15 +241,15 @@ Respond with only the category names from the list above, separated by commas.
             if is_rate_limit_error(e):
                 print(f"[⏳] Rate limit detected, switching model...")
                 switch_model()
-                # Add a small delay before retrying
-                time.sleep(2)
+                # Add a longer delay for rate limit errors
+                time.sleep(5)
                 continue
             else:
                 # For non-rate-limit errors, try switching model anyway
                 if attempt < max_retries - 1:
                     print(f"[🔄] Non-rate-limit error, trying with different model...")
                     switch_model()
-                    time.sleep(1)
+                    time.sleep(2)
                     continue
                 else:
                     print(f"[❌] All attempts failed. Final error: {e}")
@@ -229,12 +311,4 @@ def scrap_db_urls_and_write_blogs():
     finally:
         scraping_in_progress = False
 
-# if __name__ == "__main__":
-#     # scraper_main("Health")
-#     uploaded_data = scrap_db_urls_and_write_blogs()
-#     print(f"Uploaded URLs: {uploaded_data}")
-#     if uploaded_data:
-#         send_email_notification_blog(uploaded_data)
-#     else:
-#         print("No posts were uploaded, skipping email notification.")
 
