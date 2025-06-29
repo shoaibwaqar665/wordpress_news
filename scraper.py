@@ -260,16 +260,41 @@ def create_topic_combination(countries, categories):
     if not countries:
         # No country found, use "World"
         if categories:
-            return f"{categories[0]} in World"
+            if len(categories) > 1:
+                # Multiple categories, combine them
+                category_phrase = " and ".join(categories[:2])  # Take first 2 categories
+                return f"{category_phrase} in World"
+            else:
+                return f"{categories[0]} in World"
         else:
             return "Technology News in World"
     
     if not categories:
         # No category found, use "Technology"
-        return f"Technology in {countries[0]}"
+        if len(countries) > 1:
+            # Multiple countries, combine them
+            country_phrase = " and ".join(countries[:2])  # Take first 2 countries
+            return f"Technology in {country_phrase}"
+        else:
+            return f"Technology in {countries[0]}"
     
-    # Combine first country and first category
-    return f"{categories[0]} in {countries[0]}"
+    # Both countries and categories exist
+    if len(countries) == 1 and len(categories) == 1:
+        # Simple case: one country, one category
+        return f"{categories[0]} in {countries[0]}"
+    elif len(countries) == 1 and len(categories) > 1:
+        # One country, multiple categories
+        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
+        return f"{category_phrase} in {countries[0]}"
+    elif len(countries) > 1 and len(categories) == 1:
+        # Multiple countries, one category
+        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
+        return f"{categories[0]} in {country_phrase}"
+    else:
+        # Multiple countries and categories
+        category_phrase = " and ".join(categories[:2])  # Take first 2 categories
+        country_phrase = " and ".join(countries[:2])  # Take first 2 countries
+        return f"{category_phrase} in {country_phrase}"
 
 def extract_topic_from_title(title):
     """Extract a clean topic from the article title"""
