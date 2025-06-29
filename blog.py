@@ -285,6 +285,53 @@ def generate_content_with_retry(prompt, max_retries=3):
     print(f"[❌] Failed to generate content after {max_retries} attempts")
     return None
 
+# Define countries and categories (same as scraper.py)
+COUNTRIES = {
+    "Brazil", "China", "India", "Kenya", "Nigeria", "North Africa", 
+    "Russia", "South Africa", "UAE", "USA", "World"
+}
+
+CATEGORIES = {
+    "Ai", "Big Exits", "Breaking News", "Business", "Events", "Failures", 
+    "Food", "Founders", "Fundraising", "Growth Hacks", "Health", "Helth", 
+    "Regulations", "Security", "Technology", "Travel", "Trends", "Uncategorized"
+}
+
+def separate_country_and_category(assigned_categories):
+    """Separate countries from categories in the assigned categories list"""
+    countries_found = []
+    categories_found = []
+    
+    for category in assigned_categories:
+        if category in COUNTRIES:
+            countries_found.append(category)
+        elif category in CATEGORIES:
+            categories_found.append(category)
+        else:
+            # If not in either list, treat as category
+            categories_found.append(category)
+    
+    return countries_found, categories_found
+
+def create_topic_combination(countries, categories):
+    """Create a topic combination from countries and categories"""
+    if not countries and not categories:
+        return "Technology News"
+    
+    if not countries:
+        # No country found, use "World"
+        if categories:
+            return f"{categories[0]} in World"
+        else:
+            return "Technology News in World"
+    
+    if not categories:
+        # No category found, use "Technology"
+        return f"Technology in {countries[0]}"
+    
+    # Combine first country and first category
+    return f"{categories[0]} in {countries[0]}"
+
 def get_categories():
     """Fetch all categories from WordPress, handling pagination."""
     categories = []
@@ -372,9 +419,12 @@ def remove_near_duplicates(paragraphs, threshold=0.85):
 def generate_blog_content(topic):
     """Generate blog content using Gemini AI"""
     
-    # Optimized prompt for token efficiency
+    # Optimized prompt for token efficiency with topic combination
     main_prompt = f"""
 Write a comprehensive blog post about '{topic}' (800-1000 words).
+
+Focus on the specific combination of category and country/region mentioned in the topic.
+If the topic mentions a specific country, include relevant local context, examples, and market insights for that region.
 
 Structure:
 1. Main heading (## format)
@@ -385,7 +435,8 @@ Structure:
 Requirements:
 - SEO-optimized content
 - Professional language
-- Specific examples and data
+- Specific examples and data relevant to the topic
+- Local market insights if a country is mentioned
 - No markdown formatting except ## headings
 - Start directly with main heading
 - Do not use 'Introduction' as heading
@@ -439,7 +490,8 @@ Requirements:
 - Catchy and click-worthy
 - Under 60 characters
 - Action words
-- Relevant to African tech context
+- Include country/region context if mentioned in topic
+- Relevant to the specific topic combination
 - No hashtags or special formatting
 
 New title:"""
@@ -563,6 +615,7 @@ def generate_keywords(topic):
     """Generate relevant keywords for the topic"""
     keyword_prompt = f"""
 Generate 8-10 SEO keywords for '{topic}'.
+Include keywords related to both the category and country/region if mentioned.
 Return only keywords separated by commas.
 
 Keywords:"""
@@ -858,6 +911,9 @@ Rewrite this content about '{topic}' to be unique and SEO-optimized (400-450 wor
 
 Original content: {original_content[:1000]}  # Limit to save tokens
 
+Focus on the specific combination of category and country/region mentioned in the topic.
+If the topic mentions a specific country, include relevant local context and market insights.
+
 Structure:
 1. Main heading (## format)
 2. 1-2 introduction paragraphs
@@ -868,8 +924,9 @@ Requirements:
 - Completely rewrite in your own words
 - SEO-optimized with relevant keywords
 - Professional language
+- Include country/region-specific insights if mentioned
 - No markdown except ## headings
-- Focus on African tech context when relevant
+- Focus on the specific topic combination
 
 Content:"""
 
@@ -905,7 +962,7 @@ Content:"""
         print(f"Error rewriting content: {e}")
         return None
 
-def process_scraped_articles(topic,content,url,title,category_received,uploaded_urls):
+def process_scraped_articles(topic, content, url, title, category_received, uploaded_urls):
     """Process scraped articles from scraper.py and post to WordPress"""
     
     original_topic = topic
@@ -916,35 +973,57 @@ def process_scraped_articles(topic,content,url,title,category_received,uploaded_
     print(f"📝 Processing article: {original_topic}")
     print(f"🔗 Source: {url}")
     
-    # Rewrite title with AI
+    # Handle category_received (could be string or list)
+    if isinstance(category_received, str):
+        assigned_categories = [category_received]
+    else:
+        assigned_categories = category_received
+    
+    print(f"📂 Assigned Categories: {assigned_categories}")
+    
+    # Separate countries and categories
+    countries, categories = separate_country_and_category(assigned_categories)
+    print(f"🌍 Countries: {countries}, 📂 Categories: {categories}")
+    
+    # Create topic combination for content generation
+    topic_combination = create_topic_combination(countries, categories)
+    print(f"🎯 Topic Combination for Content: {topic_combination}")
+    
+    # Rewrite title with AI using the topic combination
     print("✏️ Rewriting title...")
-    new_title = rewrite_title_with_ai(original_title, original_topic)
+    new_title = rewrite_title_with_ai(original_title, topic_combination)
     print(f"📋 New title: {new_title}")
     
-    # Determine category based on topic content
-    category = category_received
-    print(f"📂 Category: {category}")
-    
-    # Rewrite content using Gemini
+    # Rewrite content using Gemini with the topic combination
     print("🔄 Rewriting content...")
-    rewritten_content = rewrite_scraped_content(original_content, original_topic)
+    rewritten_content = rewrite_scraped_content(original_content, topic_combination)
     
     if rewritten_content:
         # Add images to content
         print("🖼️ Adding images to content...")
-        content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, category)
-        category = category_received
-        print(f"📂 Category: {category}")
-      
-        # Post to WordPress
-        result = post_to_wordpress(new_title, content_with_images, category, featured_image_id)
+        content_with_images, featured_image_id = add_images_to_content(rewritten_content, new_title, assigned_categories)
+        
+        # Post to WordPress - use the first category for WordPress category assignment
+        if assigned_categories:
+            wordpress_category = assigned_categories[0]  # Use first category for WordPress
+        else:
+            wordpress_category = "Technology"  # Default fallback
+        
+        print(f"📂 WordPress Category: {wordpress_category}")
+        
+        result = post_to_wordpress(new_title, content_with_images, wordpress_category, featured_image_id)
         
         if result:
             print(f"✅ Successfully posted: {new_title}\n")
-            update_my_blog_url(url,result['link'])
-            # Send email notification
+            update_my_blog_url(url, result['link'])
             # append title category and link to uploaded_urls
-            uploaded_urls.append({'title': new_title, 'category': category, 'link': result['link'], 'original_topic': original_topic})
+            uploaded_urls.append({
+                'title': new_title, 
+                'category': assigned_categories, 
+                'link': result['link'], 
+                'original_topic': original_topic,
+                'topic_combination': topic_combination
+            })
             # send_email_notification(original_topic, category, new_title, result['link'])
         else:
             print(f"❌ Failed to post: {new_title}\n")
