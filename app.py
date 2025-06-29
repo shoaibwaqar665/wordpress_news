@@ -21,20 +21,25 @@ CORS(app)  # Enable CORS for all routes
 # Global dictionary to store scraping tasks and their status
 scraping_tasks = {}
 
+# Add a lock to prevent multiple scheduler instances
+scheduler_lock = threading.Lock()
+scheduler_running = False
+
 def scrape_in_background(task_id, url, category):
     """Background function to handle scraping"""
     try:
         scraping_tasks[task_id]['status'] = 'processing'
         scraping_tasks[task_id]['started_at'] = datetime.now().isoformat()
         
-        topic, title, url = scraper_main(url, category)
+        topic, title, url, uploaded_urls = scraper_main(url, category)
         
         if topic:
             scraping_tasks[task_id]['status'] = 'completed'
             scraping_tasks[task_id]['result'] = {
                 'topic': topic,
                 'title': title,
-                'url': url
+                'url': url,
+                'uploaded_urls': uploaded_urls
             }
         else:
             scraping_tasks[task_id]['status'] = 'failed'
@@ -407,16 +412,45 @@ def get_all_blogs_handler():
 # create a function that runs with frequency of 8 hours after the server start
 def schedule_task(interval_hours):
     def loop():
+        global scheduler_running
         while True:
-            # scrap_db_urls_and_write_blogs()
-            extract_urls_from_source_url()
-            uploaded_data = scrap_db_urls_and_write_blogs()
-            print(f"Uploaded URLs: {uploaded_data}")
-            if uploaded_data:
-                send_email_notification_blog(uploaded_data)
-            else:
-                print("No posts were uploaded, skipping email notification.")
+            try:
+                with scheduler_lock:
+                    if scheduler_running:
+                        print(f"[Scheduler] Another instance is already running, skipping this cycle")
+                        time.sleep(interval_hours * 3600)
+                        continue
+                    
+                    scheduler_running = True
+                    print(f"[Scheduler] Starting scheduled task at {datetime.now()}")
+                
+                # Run the scraping task
+                print("[Scheduler] Running scrap_db_urls_and_write_blogs...")
+                uploaded_data = scrap_db_urls_and_write_blogs()
+                print(f"[Scheduler] Uploaded URLs: {uploaded_data}")
+                
+                if uploaded_data:
+                    print("[Scheduler] Sending email notification...")
+                    send_email_notification_blog(uploaded_data)
+                else:
+                    print("[Scheduler] No posts were uploaded, skipping email notification.")
+
+                # Run URL extraction
+                print("[Scheduler] Running extract_urls_from_source_url...")
+                extract_urls_from_source_url()
+                
+                print(f"[Scheduler] Completed scheduled task at {datetime.now()}")
+                
+            except Exception as e:
+                print(f"[Scheduler] Error in scheduled task: {e}")
+            finally:
+                with scheduler_lock:
+                    scheduler_running = False
+            
+            # Wait for next cycle
+            print(f"[Scheduler] Waiting {interval_hours} hours until next run...")
             time.sleep(interval_hours * 3600)  # Convert hours to seconds
+    
     thread = threading.Thread(target=loop, daemon=True)
     thread.start()
 
@@ -425,7 +459,49 @@ def start_scheduler():
     schedule_task(interval_hours=8)
     print("[Scheduler started] Running every 8 hours.")
 
+# Add routes for manual scheduler control
+@app.route('/trigger-scheduler', methods=['POST'])
+def trigger_scheduler():
+    """Manually trigger the scheduler for testing"""
+    global scheduler_running
+    with scheduler_lock:
+        if scheduler_running:
+            return jsonify({'message': 'Scheduler is already running', 'status': 'running'}), 409
+        
+        scheduler_running = True
+    
+    try:
+        print("[Manual Trigger] Starting scheduled task...")
+        uploaded_data = scrap_db_urls_and_write_blogs()
+        print(f"[Manual Trigger] Uploaded URLs: {uploaded_data}")
+        
+        if uploaded_data:
+            send_email_notification_blog(uploaded_data)
+        
+        extract_urls_from_source_url()
+        
+        return jsonify({
+            'message': 'Scheduler triggered successfully',
+            'uploaded_data': uploaded_data,
+            'status': 'completed'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'failed'}), 500
+    finally:
+        with scheduler_lock:
+            scheduler_running = False
+
+@app.route('/scheduler-status', methods=['GET'])
+def scheduler_status():
+    """Get the current status of the scheduler"""
+    return jsonify({
+        'scheduler_running': scheduler_running,
+        'current_time': datetime.now().isoformat()
+    })
 
 if __name__ == "__main__":
+    print("[App] Starting Flask application...")
     start_scheduler()
-    app.run(debug=True, host='0.0.0.0', port=8008)
+    print("[App] Scheduler started successfully")
+    print("[App] Starting Flask server...")
+    app.run(debug=False, host='0.0.0.0', port=8008)  # Set debug=False to prevent duplicate execution

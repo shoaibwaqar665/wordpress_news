@@ -9,8 +9,12 @@ from dotenv import load_dotenv
 from blog import blog_main, send_email_notification_blog
 from dbOperations import get_categories_data, get_urls, soft_delete_url
 import time
+from datetime import datetime
 
 load_dotenv()
+
+# Global flag to prevent multiple scraping instances
+scraping_in_progress = False
 
 # Initialize Gemini model
 gemini_api_key = os.getenv('GEMINI_API_KEY')
@@ -183,41 +187,54 @@ def scraper_main(url, category):
 
 
 def scrap_db_urls_and_write_blogs():
-    urls = get_urls()
-    if not urls:
-        print("No URLs found in the database.")
+    global scraping_in_progress
+    
+    if scraping_in_progress:
+        print("[Scraper] Another scraping instance is already running, skipping...")
         return []
-    print(f"Found {len(urls)} URLs to scrape")
     
-    uploaded_urls = []  # Initialize array to collect uploaded posts
-    
-    for url in urls:
-        result = scrape_url(url)
-        if result:
-            categories_data = get_categories_data()
-            category = assign_category_with_gemini(result['text'], categories_data)
-            print(f"📂 Category: {category}")
-            if category:
-                # Pass the uploaded_urls array to collect results
-                uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
-                soft_delete_url(url, str(category))
-                time.sleep(5)
+    scraping_in_progress = True
+    try:
+        print(f"[Scraper] Starting scrap_db_urls_and_write_blogs at {datetime.now()}")
+        urls = get_urls()
+        if not urls:
+            print("[Scraper] No URLs found in the database.")
+            return []
+        print(f"[Scraper] Found {len(urls)} URLs to scrape")
+        
+        uploaded_urls = []  # Initialize array to collect uploaded posts
+        
+        for url in urls:
+            print(f"[Scraper] Processing URL: {url}")
+            result = scrape_url(url)
+            if result:
+                categories_data = get_categories_data()
+                category = assign_category_with_gemini(result['text'], categories_data)
+                print(f"[Scraper] Category: {category}")
+                if category:
+                    # Pass the uploaded_urls array to collect results
+                    uploaded_urls = blog_main(result['topic'], result['text'], result['url'], result['title'], category, uploaded_urls)
+                    soft_delete_url(url, str(category))
+                    time.sleep(5)
+                else:
+                    print(f"[Scraper] No category found for {url}")
+                    continue
             else:
-                print(f"❌ No category found for {url}")
+                print(f"[Scraper] No result found for {url}")
+                # retry for 3 times
                 continue
-        else:
-            print(f"❌ No result found for {url}")
-            # retry for 3 times
-            continue
-    
-    return uploaded_urls
+        
+        print(f"[Scraper] Completed scrap_db_urls_and_write_blogs. Uploaded {len(uploaded_urls)} posts.")
+        return uploaded_urls
+    finally:
+        scraping_in_progress = False
 
-if __name__ == "__main__":
-    # scraper_main("Health")
-    uploaded_data = scrap_db_urls_and_write_blogs()
-    print(f"Uploaded URLs: {uploaded_data}")
-    if uploaded_data:
-        send_email_notification_blog(uploaded_data)
-    else:
-        print("No posts were uploaded, skipping email notification.")
+# if __name__ == "__main__":
+#     # scraper_main("Health")
+#     uploaded_data = scrap_db_urls_and_write_blogs()
+#     print(f"Uploaded URLs: {uploaded_data}")
+#     if uploaded_data:
+#         send_email_notification_blog(uploaded_data)
+#     else:
+#         print("No posts were uploaded, skipping email notification.")
 
