@@ -430,7 +430,7 @@ def rewrite_title_with_ai(original_title, topic):
     """Rewrite the title using AI to make it more engaging and SEO-friendly, avoiding generic or meta titles, and strictly enforcing a maximum length."""
     import re
     
-    MAX_TITLE_LENGTH = 60
+    MAX_TITLE_LENGTH = 80  # Increased from 60 to 80 characters
     
     def is_bad_title(title):
         # Patterns to avoid (case-insensitive)
@@ -488,7 +488,7 @@ def rewrite_title_with_ai(original_title, topic):
             if len(title_lower.split()) < 8 and (":" in title_lower or "," in title_lower):
                 return True
         # Avoid titles that are too generic or not meaningful
-        if len(title_lower) < 15:
+        if len(title_lower) < 10:  # Reduced from 15 to 10
             return True
         # Avoid titles that are too long
         if len(title) > MAX_TITLE_LENGTH:
@@ -496,7 +496,7 @@ def rewrite_title_with_ai(original_title, topic):
         return False
 
     title_prompt = f"""
-Rewrite this title to be engaging and SEO-friendly (under {MAX_TITLE_LENGTH} characters):
+Create an engaging and SEO-friendly title for this article (under {MAX_TITLE_LENGTH} characters):
 
 Original: {original_title}
 Topic: {topic}
@@ -507,9 +507,11 @@ Requirements:
 - Action words
 - Relevant to African tech context
 - No hashtags or special formatting
-- Do NOT use phrases like 'Here are a few options', 'SEO', 'engagement', 'context', 'character(s)', 'option(s)', or any meta-instructions. The title must be meaningful and directly relevant to the article.
+- Do NOT use phrases like 'Here are a few options', 'SEO', 'engagement', 'context', 'character(s)', 'option(s)', or any meta-instructions
+- The title must be meaningful and directly relevant to the article
+- Start directly with the title - NO explanations or meta-commentary
 
-New title:"""
+Title:"""
 
     try:
         max_attempts = 3
@@ -527,6 +529,21 @@ New title:"""
             new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
             new_title = re.sub(r'\s+', ' ', new_title)  # Replace multiple spaces with single space
             new_title = new_title.strip()
+            
+            # Remove any meta-instructions or explanations from the title
+            meta_patterns = [
+                r"^title:\s*",
+                r"^new title:\s*",
+                r"^here's.*:",
+                r"^here is.*:",
+                r"^rewritten.*:",
+                r"^seo.*:",
+                r"^engaging.*:",
+                r"^catchy.*:"
+            ]
+            for pattern in meta_patterns:
+                new_title = re.sub(pattern, '', new_title, flags=re.IGNORECASE)
+            new_title = new_title.strip()
             # Truncate if slightly over length (as a last resort)
             if len(new_title) > MAX_TITLE_LENGTH:
                 # Try to cut at the last space before the limit
@@ -543,13 +560,13 @@ New title:"""
         # Fallback if AI fails or all attempts are bad
         if not new_title or len(new_title) < 10 or is_bad_title(new_title):
             # Create a simple fallback title
-            words = topic.split()[:8]  # Take first 8 words
+            words = topic.split()[:10]  # Take first 10 words instead of 8
             new_title = ' '.join(words)
             if len(new_title) > MAX_TITLE_LENGTH:
                 new_title = new_title[:MAX_TITLE_LENGTH].rstrip()
                 if ' ' in new_title:
                     new_title = new_title[:new_title.rfind(' ')].rstrip()
-            if len(new_title) < 20:
+            if len(new_title) < 15:  # Reduced from 20 to 15
                 new_title = f"Latest News: {new_title}"
         return new_title
     except Exception as e:
@@ -594,6 +611,24 @@ def clean_content(content, topic):
             continue
         # Remove lines with only 'Introduction'
         if para.strip().lower() == 'introduction':
+            continue
+        # Remove meta-instructions and explanations
+        meta_patterns = [
+            r"here's a rewritten",
+            r"here is a rewritten",
+            r"seo-optimized version",
+            r"tailored for.*context",
+            r"adhering to.*specifications",
+            r"comprehensive blog post about",
+            r"original content:",
+            r"structure:",
+            r"requirements:",
+            r"content:",
+            r"meta-instructions",
+            r"meta-commentary"
+        ]
+        para_lower = para.lower()
+        if any(re.search(pattern, para_lower) for pattern in meta_patterns):
             continue
         # Remove ellipsis or incomplete lines
         if '[...]' in para or para.endswith('...') or para.endswith('..'):
@@ -940,14 +975,14 @@ def rewrite_scraped_content(original_content, topic):
     """Rewrite scraped content using Gemini AI to make it unique and SEO-optimized"""
     
     rewrite_prompt = f"""
-Rewrite this content about '{topic}' to be unique and SEO-optimized (300-400 words).
+Write a comprehensive blog post about '{topic}' (300-400 words).
 
 Original content: {original_content[:1000]}  # Limit to save tokens
 
 Structure:
 1. Main heading (## format)
-2. 1 introduction paragraphs
-3. 1 section with ## headings
+2. 1 introduction paragraph
+3. 1 section with ## heading
 4. 1 conclusion paragraph
 
 Requirements:
@@ -956,6 +991,8 @@ Requirements:
 - Professional language
 - No markdown except ## headings
 - Focus on African tech context when relevant
+- Start directly with the main heading - NO meta-instructions or explanations
+- Do NOT include phrases like "Here's a rewritten version", "SEO-optimized version", or any meta-commentary
 
 Content:"""
 
@@ -969,7 +1006,31 @@ Content:"""
         
         # Clean the content thoroughly
         content = clean_content(content, topic)
-        
+
+        # Additional cleaning to remove any remaining meta-instructions
+        content_lines = content.split('\n')
+        cleaned_lines = []
+        for line in content_lines:
+            line_lower = line.lower()
+            # Skip lines that contain meta-instructions
+            if any(phrase in line_lower for phrase in [
+                "here's a rewritten",
+                "here is a rewritten", 
+                "seo-optimized version",
+                "tailored for",
+                "adhering to",
+                "comprehensive blog post",
+                "original content:",
+                "structure:",
+                "requirements:",
+                "content:",
+                "meta-instructions",
+                "meta-commentary"
+            ]):
+                continue
+            cleaned_lines.append(line)
+        content = '\n'.join(cleaned_lines)
+
         # Convert to proper HTML format for WordPress
         content = convert_to_html(content)
         
