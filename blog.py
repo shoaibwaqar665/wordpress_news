@@ -427,55 +427,141 @@ Content:"""
         return None
 
 def rewrite_title_with_ai(original_title, topic):
-    """Rewrite the title using AI to make it more engaging and SEO-friendly"""
+    """Rewrite the title using AI to make it more engaging and SEO-friendly, avoiding generic or meta titles, and strictly enforcing a maximum length."""
+    import re
     
+    MAX_TITLE_LENGTH = 60
+    
+    def is_bad_title(title):
+        # Patterns to avoid (case-insensitive)
+        bad_patterns = [
+            r"here are a few options",
+            r"prioritizing seo",
+            r"engagement",
+            r"keeping (in mind|the african tech context)",
+            r"character[s]?",
+            r"option[s]?",
+            r"context",
+            r"limit[s]?",
+            r"list",
+            r"seo",
+            r"african tech context",
+            r"\d+ character[s]?",
+            r"\d+ option[s]?",
+            r"\d+ character[s]?",
+            r"\d+ word[s]?",
+            r"\d+ headline[s]?",
+            r"headline[s]?",
+            r"title[s]?",
+            r"meta",
+            r"instruction[s]?",
+            r"suggestion[s]?",
+            r"example[s]?",
+            r"catchy title[s]?",
+            r"engaging title[s]?",
+            r"seo[- ]?friendly",
+            r"african tech context",
+            r"keeping.*context",
+            r"option[s]?",
+            r"option[s]?:",
+            r"option[s]? -",
+            r"option[s]?:",
+            r"option[s]? ",
+            r"option[s]?\d*",
+            r"\d+ option[s]?",
+            r"\d+ character[s]?",
+            r"\d+ headline[s]?",
+            r"\d+ title[s]?",
+            r"\d+ suggestion[s]?",
+            r"\d+ example[s]?",
+            r"\d+ list[s]?",
+            r"list of",
+            r"list:"
+        ]
+        title_lower = title.lower()
+        for pat in bad_patterns:
+            if re.search(pat, title_lower):
+                return True
+        # Avoid titles that are just a list or meta-instructions
+        if any(sep in title_lower for sep in [":", "-", "|", ","]):
+            # If the title is just a list of options, not a real headline
+            if len(title_lower.split()) < 8 and (":" in title_lower or "," in title_lower):
+                return True
+        # Avoid titles that are too generic or not meaningful
+        if len(title_lower) < 15:
+            return True
+        # Avoid titles that are too long
+        if len(title) > MAX_TITLE_LENGTH:
+            return True
+        return False
+
     title_prompt = f"""
-Rewrite this title to be engaging and SEO-friendly (under 60 characters):
+Rewrite this title to be engaging and SEO-friendly (under {MAX_TITLE_LENGTH} characters):
 
 Original: {original_title}
 Topic: {topic}
 
 Requirements:
 - Catchy and click-worthy
-- Under 60 characters
+- Under {MAX_TITLE_LENGTH} characters
 - Action words
 - Relevant to African tech context
 - No hashtags or special formatting
+- Do NOT use phrases like 'Here are a few options', 'SEO', 'engagement', 'context', 'character(s)', 'option(s)', or any meta-instructions. The title must be meaningful and directly relevant to the article.
 
 New title:"""
 
     try:
-        new_title = generate_content_with_retry(title_prompt)
-        
-        if not new_title:
-            print("❌ Failed to rewrite title after all retries")
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            new_title = generate_content_with_retry(title_prompt)
+            if not new_title:
+                print("❌ Failed to rewrite title after all retries")
+                # Create a simple fallback title
+                words = topic.split()[:6]  # Take first 6 words
+                new_title = ' '.join(words)
+                if len(new_title) < 20:
+                    new_title = f"Latest Updates: {new_title}"
+                return new_title
+            # Clean up any remaining markdown or special characters
+            new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
+            new_title = re.sub(r'\s+', ' ', new_title)  # Replace multiple spaces with single space
+            new_title = new_title.strip()
+            # Truncate if slightly over length (as a last resort)
+            if len(new_title) > MAX_TITLE_LENGTH:
+                # Try to cut at the last space before the limit
+                cut = new_title[:MAX_TITLE_LENGTH].rstrip()
+                if ' ' in cut:
+                    cut = cut[:cut.rfind(' ')].rstrip()
+                new_title = cut
+            # Check for bad patterns or length
+            if not is_bad_title(new_title):
+                break
+            else:
+                print(f"[⚠️] AI generated a bad or lengthy title, retrying... Attempt {attempt+1}")
+                new_title = None
+        # Fallback if AI fails or all attempts are bad
+        if not new_title or len(new_title) < 10 or is_bad_title(new_title):
             # Create a simple fallback title
-            words = topic.split()[:6]  # Take first 6 words
+            words = topic.split()[:8]  # Take first 8 words
             new_title = ' '.join(words)
+            if len(new_title) > MAX_TITLE_LENGTH:
+                new_title = new_title[:MAX_TITLE_LENGTH].rstrip()
+                if ' ' in new_title:
+                    new_title = new_title[:new_title.rfind(' ')].rstrip()
             if len(new_title) < 20:
-                new_title = f"Latest Updates: {new_title}"
-            return new_title
-        
-        # Clean up any remaining markdown or special characters
-        new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
-        new_title = re.sub(r'\s+', ' ', new_title)  # Replace multiple spaces with single space
-        new_title = new_title.strip()
-        
-        # Fallback if AI fails
-        if not new_title or len(new_title) < 10:
-            # Create a simple fallback title
-            words = topic.split()[:6]  # Take first 6 words
-            new_title = ' '.join(words)
-            if len(new_title) < 20:
-                new_title = f"Latest Updates: {new_title}"
-        
+                new_title = f"Latest News: {new_title}"
         return new_title
-        
     except Exception as e:
         print(f"Error rewriting title: {e}")
         # Fallback title
-        words = topic.split()[:6]
-        return ' '.join(words) if words else "Technology News Update"
+        words = topic.split()[:8]
+        new_title = ' '.join(words) if words else "Technology News Update"
+        if len(new_title) > MAX_TITLE_LENGTH:
+            new_title = new_title[:MAX_TITLE_LENGTH].rstrip()
+            if ' ' in new_title:
+                new_title = new_title[:new_title.rfind(' ')].rstrip()
+        return new_title
 
 def clean_content(content, topic):
     """Clean and format the content, removing repetition, ellipsis, improper headings, near-duplicates, and markdown formatting."""
