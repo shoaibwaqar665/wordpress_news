@@ -369,6 +369,44 @@ def remove_near_duplicates(paragraphs, threshold=0.85):
             unique_paragraphs.append(para)
     return unique_paragraphs
 
+def is_english_content(text):
+    """Check if the content is primarily in English"""
+    import re
+    
+    # Common English words and patterns
+    english_patterns = [
+        r'\b(the|and|or|but|in|on|at|to|for|of|with|by|from|up|about|into|through|during|before|after|above|below|between|among|within|without|against|toward|towards|upon|across|behind|beneath|beside|beyond|inside|outside|under|over|throughout|underneath|along|around|down|off|out|past|since|until|upon|via|per|except|like|unlike|as|than|despite|according|regarding|concerning|including|excluding|following|preceding|during|while|when|where|why|how|what|which|who|whom|whose|this|that|these|those|i|you|he|she|it|we|they|me|him|her|us|them|my|your|his|her|its|our|their|mine|yours|his|hers|ours|theirs|myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|am|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|could|should|may|might|must|can|shall|ought|need|dare|used|going|gonna|wanna|gotta|lemme|gimme|wanna|gotta|lemme|gimme|wanna|gotta|lemme|gimme)\b',
+        r'\b(a|an|and|are|as|at|be|by|for|from|has|he|in|is|it|its|may|not|of|on|or|that|the|to|was|will|with|the|and|for|are|but|not|you|all|any|can|had|her|was|one|our|out|day|get|has|him|his|how|man|new|now|old|see|two|way|who|boy|did|its|let|put|say|she|too|use)\b'
+    ]
+    
+    # Count English words
+    english_word_count = 0
+    total_word_count = 0
+    
+    # Split text into words
+    words = re.findall(r'\b\w+\b', text.lower())
+    total_word_count = len(words)
+    
+    if total_word_count == 0:
+        return True  # Assume English if no words found
+    
+    # Check for English patterns
+    for pattern in english_patterns:
+        english_word_count += len(re.findall(pattern, text.lower()))
+    
+    # Calculate percentage of English words
+    english_percentage = english_word_count / total_word_count if total_word_count > 0 else 0
+    
+    # Also check for common non-English characters
+    non_english_chars = re.findall(r'[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿāăąćĉċčďđēĕėęěĝğġģĥħĩīĭįıĳĵķĸĺļľŀłńņňŉŋōŏőœŕŗřśŝşšſţťŧũūŭůűųŵŷźżž]', text.lower())
+    
+    # If there are many non-English characters, it's likely not English
+    if len(non_english_chars) > len(text) * 0.1:  # More than 10% non-English chars
+        return False
+    
+    # Consider it English if more than 60% of words match English patterns
+    return english_percentage > 0.6
+
 def generate_blog_content(topic):
     """Generate blog content using Gemini AI"""
     
@@ -383,12 +421,14 @@ Structure:
 4. 1-2 conclusion paragraphs
 
 Requirements:
+- If the topic contains text in a language other than English, translate it to English first
 - SEO-optimized content
 - Professional language
 - Specific examples and data
 - No markdown formatting except ## headings
 - Start directly with main heading
 - Do not use 'Introduction' as heading
+- Ensure all content is in clear, professional English
 
 Topic: {topic}
 
@@ -502,6 +542,7 @@ Original: {original_title}
 Topic: {topic}
 
 Requirements:
+- If the original title or topic is in a language other than English, translate it to English first
 - Catchy and click-worthy
 - Under {MAX_TITLE_LENGTH} characters
 - Action words
@@ -510,6 +551,7 @@ Requirements:
 - Do NOT use phrases like 'Here are a few options', 'SEO', 'engagement', 'context', 'character(s)', 'option(s)', or any meta-instructions
 - The title must be meaningful and directly relevant to the article
 - Start directly with the title - NO explanations or meta-commentary
+- Ensure the title accurately reflects the original article's content and context
 
 Title:"""
 
@@ -685,6 +727,11 @@ def generate_keywords(topic):
     keyword_prompt = f"""
 Generate 8-10 SEO keywords for '{topic}'.
 Return only keywords separated by commas.
+
+Requirements:
+- If the topic contains text in a language other than English, translate it to English first
+- Generate keywords in English only
+- Focus on relevant, searchable terms related to the topic
 
 Keywords:"""
 
@@ -986,13 +1033,18 @@ Structure:
 4. 1 conclusion paragraph
 
 Requirements:
-- Completely rewrite in your own words
+- If the original content is in a language other than English, translate it to English first
+- Completely rewrite in your own words while maintaining the original context and key information
+- Preserve all important facts, data, quotes, and technical details from the original article
+- Do not add information that wasn't in the original content
+- Do not remove critical information from the original article
 - SEO-optimized with relevant keywords
 - Professional language
 - No markdown except ## headings
 - Focus on African tech context when relevant
 - Start directly with the main heading - NO meta-instructions or explanations
 - Do NOT include phrases like "Here's a rewritten version", "SEO-optimized version", or any meta-commentary
+- Ensure the rewritten content accurately reflects the original article's message and intent
 
 Content:"""
 
@@ -1062,6 +1114,10 @@ def process_scraped_articles(topic,content,url,title,category_received,uploaded_
     
     print(f"📝 Processing article: {original_topic}")
     print(f"🔗 Source: {url}")
+    
+    # Check if content needs translation
+    if not is_english_content(original_content):
+        print("🌐 Detected non-English content, will translate during processing...")
     
     # Rewrite title with AI
     print("✏️ Rewriting title...")
