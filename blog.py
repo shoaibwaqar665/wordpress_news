@@ -470,9 +470,15 @@ def rewrite_title_with_ai(original_title, topic):
     """Rewrite the title using AI to make it more engaging and SEO-friendly, avoiding generic or meta titles, and strictly enforcing a maximum length."""
     import re
     
-    MAX_TITLE_LENGTH = 80  # Increased from 60 to 80 characters
+    MAX_TITLE_LENGTH = 60 
     
     def is_bad_title(title):
+        # Check if title contains non-English characters (common in other languages)
+        non_english_chars = re.findall(r'[^\x00-\x7F\u00A0-\u00FF\u0100-\u017F\u0180-\u024F\u1E00-\u1EFF\u2C60-\u2C7F\uA720-\uA7FF]', title)
+        if non_english_chars:
+            print(f"[⚠️] Title contains non-English characters: {non_english_chars}")
+            return True
+            
         # Patterns to avoid (case-insensitive)
         bad_patterns = [
             r"here are a few options",
@@ -541,8 +547,11 @@ Create an engaging and SEO-friendly title for this article (under {MAX_TITLE_LEN
 Original: {original_title}
 Topic: {topic}
 
+IMPORTANT: If the original title or topic is in ANY language other than English, you MUST translate it to English first before creating the new title.
+
 Requirements:
-- If the original title or topic is in a language other than English, translate it to English first
+- ALWAYS output the title in English only
+- If the original is not in English, translate the meaning to English first
 - Catchy and click-worthy
 - Under {MAX_TITLE_LENGTH} characters
 - Action words
