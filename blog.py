@@ -467,10 +467,10 @@ Content:"""
         return None
 
 def rewrite_title_with_ai(original_title, topic):
-    """Rewrite the title using AI to make it more engaging and SEO-friendly, avoiding generic or meta titles, and strictly enforcing a maximum length."""
+    """Rewrite the title using AI to make it more engaging and SEO-friendly, ensuring complete sentences and proper meaning."""
     import re
     
-    MAX_TITLE_LENGTH = 60 
+    MAX_TITLE_LENGTH = 80  # Increased from 60 to allow for more complete sentences
     
     def is_bad_title(title):
         # Check if title contains non-English characters (common in other languages)
@@ -534,12 +534,123 @@ def rewrite_title_with_ai(original_title, topic):
             if len(title_lower.split()) < 8 and (":" in title_lower or "," in title_lower):
                 return True
         # Avoid titles that are too generic or not meaningful
-        if len(title_lower) < 10:  # Reduced from 15 to 10
+        if len(title_lower) < 10:
             return True
         # Avoid titles that are too long
         if len(title) > MAX_TITLE_LENGTH:
             return True
         return False
+
+    def create_intelligent_fallback_title(topic, original_title):
+        """Create a meaningful fallback title when AI generation fails."""
+        # Clean the topic and original title
+        clean_topic = re.sub(r'[^\w\s]', ' ', topic).strip()
+        clean_original = re.sub(r'[^\w\s]', ' ', original_title).strip()
+        
+        # Try to extract meaningful words
+        meaningful_words = []
+        
+        # Add words from topic (prioritize longer, more meaningful words)
+        topic_words = [word for word in clean_topic.split() if len(word) > 3]
+        meaningful_words.extend(topic_words[:4])
+        
+        # Add words from original title if different from topic
+        if clean_original.lower() != clean_topic.lower():
+            original_words = [word for word in clean_original.split() if len(word) > 3]
+            meaningful_words.extend(original_words[:3])
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_words = []
+        for word in meaningful_words:
+            if word.lower() not in seen:
+                seen.add(word.lower())
+                unique_words.append(word)
+        
+        # Create a meaningful title
+        if len(unique_words) >= 3:
+            # Try to create a complete sentence
+            base_title = ' '.join(unique_words[:6])
+            
+            # Add context words to make it more meaningful
+            context_words = ['Technology', 'Innovation', 'Development', 'News', 'Update', 'Trend']
+            
+            # Check if the title already has a context word
+            has_context = any(word.lower() in base_title.lower() for word in context_words)
+            
+            if not has_context and len(base_title) < 40:
+                # Add a context word to make it more meaningful
+                base_title = f"{context_words[0]} {base_title}"
+            
+            return base_title
+        else:
+            # Fallback to a generic but meaningful title
+            return "Latest Technology News and Updates"
+
+    def ensure_complete_sentence(title):
+        """Ensure the title forms a complete sentence or meaningful phrase."""
+        # Remove trailing punctuation that might indicate incomplete sentences
+        title = re.sub(r'[,\s]+$', '', title)
+        
+        # If title ends with incomplete words (like "tech" instead of "technology"), try to complete them
+        common_incomplete_endings = {
+            'tech': 'technology',
+            'dev': 'development',
+            'innov': 'innovation',
+            'start': 'startup',
+            'fin': 'finance',
+            'crypt': 'cryptocurrency',
+            'block': 'blockchain',
+            'artif': 'artificial',
+            'intell': 'intelligence',
+            'mach': 'machine',
+            'learn': 'learning',
+            'data': 'data',
+            'cloud': 'cloud',
+            'cyber': 'cybersecurity',
+            'digit': 'digital',
+            'mob': 'mobile',
+            'web': 'web',
+            'app': 'application',
+            'soft': 'software',
+            'hard': 'hardware'
+        }
+        
+        words = title.split()
+        if words:
+            last_word = words[-1].lower()
+            for incomplete, complete in common_incomplete_endings.items():
+                if last_word.startswith(incomplete) and len(last_word) <= len(incomplete) + 2:
+                    words[-1] = complete
+                    title = ' '.join(words)
+                    break
+        
+        return title
+
+    # Detect if the original title or topic is in a non-English language
+    def detect_language(text):
+        """Simple language detection for common non-English patterns."""
+        # Common non-English character patterns
+        chinese_chars = re.findall(r'[\u4e00-\u9fff]', text)
+        arabic_chars = re.findall(r'[\u0600-\u06ff]', text)
+        cyrillic_chars = re.findall(r'[\u0400-\u04ff]', text)
+        hindi_chars = re.findall(r'[\u0900-\u097f]', text)
+        
+        if chinese_chars:
+            return "Chinese"
+        elif arabic_chars:
+            return "Arabic"
+        elif cyrillic_chars:
+            return "Cyrillic"
+        elif hindi_chars:
+            return "Hindi"
+        else:
+            return "English"
+
+    detected_lang = detect_language(original_title + " " + topic)
+    
+    if detected_lang != "English":
+        print(f"[🌐] Detected {detected_lang} language, will translate to English")
 
     title_prompt = f"""
 Create an engaging and SEO-friendly title for this article (under {MAX_TITLE_LENGTH} characters):
@@ -547,20 +658,20 @@ Create an engaging and SEO-friendly title for this article (under {MAX_TITLE_LEN
 Original: {original_title}
 Topic: {topic}
 
-IMPORTANT: If the original title or topic is in ANY language other than English, you MUST translate it to English first before creating the new title.
-
-Requirements:
+IMPORTANT REQUIREMENTS:
 - ALWAYS output the title in English only
 - If the original is not in English, translate the meaning to English first
+- The title must be a complete sentence or meaningful phrase
 - Catchy and click-worthy
 - Under {MAX_TITLE_LENGTH} characters
-- Action words
+- Use action words and be specific
 - Relevant to African tech context
 - No hashtags or special formatting
 - Do NOT use phrases like 'Here are a few options', 'SEO', 'engagement', 'context', 'character(s)', 'option(s)', or any meta-instructions
 - The title must be meaningful and directly relevant to the article
 - Start directly with the title - NO explanations or meta-commentary
 - Ensure the title accurately reflects the original article's content and context
+- Make sure the title forms a complete thought or sentence
 
 Title:"""
 
@@ -570,15 +681,11 @@ Title:"""
             new_title = generate_content_with_retry(title_prompt)
             if not new_title:
                 print("❌ Failed to rewrite title after all retries")
-                # Create a simple fallback title
-                words = topic.split()[:6]  # Take first 6 words
-                new_title = ' '.join(words)
-                if len(new_title) < 20:
-                    new_title = f"Latest Updates: {new_title}"
-                return new_title
+                return create_intelligent_fallback_title(topic, original_title)
+            
             # Clean up any remaining markdown or special characters
-            new_title = re.sub(r'[#*`]', '', new_title)  # Remove #, *, and backticks
-            new_title = re.sub(r'\s+', ' ', new_title)  # Replace multiple spaces with single space
+            new_title = re.sub(r'[#*`]', '', new_title)
+            new_title = re.sub(r'\s+', ' ', new_title)
             new_title = new_title.strip()
             
             # Remove any meta-instructions or explanations from the title
@@ -595,6 +702,10 @@ Title:"""
             for pattern in meta_patterns:
                 new_title = re.sub(pattern, '', new_title, flags=re.IGNORECASE)
             new_title = new_title.strip()
+            
+            # Ensure complete sentence
+            new_title = ensure_complete_sentence(new_title)
+            
             # Truncate if slightly over length (as a last resort)
             if len(new_title) > MAX_TITLE_LENGTH:
                 # Try to cut at the last space before the limit
@@ -602,34 +713,25 @@ Title:"""
                 if ' ' in cut:
                     cut = cut[:cut.rfind(' ')].rstrip()
                 new_title = cut
+                # Ensure it's still a complete sentence
+                new_title = ensure_complete_sentence(new_title)
+            
             # Check for bad patterns or length
             if not is_bad_title(new_title):
                 break
             else:
                 print(f"[⚠️] AI generated a bad or lengthy title, retrying... Attempt {attempt+1}")
                 new_title = None
+        
         # Fallback if AI fails or all attempts are bad
         if not new_title or len(new_title) < 10 or is_bad_title(new_title):
-            # Create a simple fallback title
-            words = topic.split()[:10]  # Take first 10 words instead of 8
-            new_title = ' '.join(words)
-            if len(new_title) > MAX_TITLE_LENGTH:
-                new_title = new_title[:MAX_TITLE_LENGTH].rstrip()
-                if ' ' in new_title:
-                    new_title = new_title[:new_title.rfind(' ')].rstrip()
-            if len(new_title) < 15:  # Reduced from 20 to 15
-                new_title = f"Latest News: {new_title}"
+            new_title = create_intelligent_fallback_title(topic, original_title)
+        
         return new_title
+        
     except Exception as e:
         print(f"Error rewriting title: {e}")
-        # Fallback title
-        words = topic.split()[:8]
-        new_title = ' '.join(words) if words else "Technology News Update"
-        if len(new_title) > MAX_TITLE_LENGTH:
-            new_title = new_title[:MAX_TITLE_LENGTH].rstrip()
-            if ' ' in new_title:
-                new_title = new_title[:new_title.rfind(' ')].rstrip()
-        return new_title
+        return create_intelligent_fallback_title(topic, original_title)
 
 def clean_content(content, topic):
     """Clean and format the content, removing repetition, ellipsis, improper headings, near-duplicates, and markdown formatting."""
