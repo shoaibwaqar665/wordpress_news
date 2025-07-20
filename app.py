@@ -456,8 +456,8 @@ def schedule_task(interval_hours):
 
 
 def start_scheduler():
-    schedule_task(interval_hours=8)
-    print("[Scheduler started] Running every 8 hours.")
+    schedule_task(interval_hours=4)
+    print("[Scheduler started] Running every 4 hours.")
 
 # Add routes for manual scheduler control
 @app.route('/trigger-scheduler', methods=['POST'])
