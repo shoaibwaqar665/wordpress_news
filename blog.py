@@ -1135,7 +1135,7 @@ def rewrite_scraped_content(original_content, topic):
     rewrite_prompt = f"""
 Write a comprehensive blog post about '{topic}' (300-400 words).
 
-Original content: {original_content[:1000]}  # Limit to save tokens
+Original content: {original_content[:2000]}  # Limit to save tokens
 
 Structure:
 1. Main heading (## format)
