@@ -162,8 +162,8 @@ genai.configure(api_key=gemini_api_key)
 
 # Model configurations
 MODELS = {
-    'primary': "gemini-2.0-flash",
-    'fallback': "gemini-2.0-flash-lite",
+    'primary': "gemini-2.5-flash",
+    'fallback': "gemini-2.5-flash-lite",
     'fallback-pro': "gemini-2.5-pro",
     'fallback-flash': "gemini-2.5-flash"
 }
